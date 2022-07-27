@@ -43,6 +43,8 @@ func NewRegistryCmd() *cobra.Command {
 	flags.StringVar(&options.S3.AccessKey, "s3-access-key", options.S3.AccessKey, "s3 access key")
 	flags.StringVar(&options.S3.SecretKey, "s3-secret-key", options.S3.SecretKey, "s3 secret key")
 	flags.DurationVar(&options.S3.PresignExpire, "s3-presign-expire", options.S3.PresignExpire, "s3 presign expire")
+	flags.StringVar(&options.S3.Region, "s3-region", options.S3.Region, "s3 region")
+	flags.StringVar(&options.OIDC.Issuer, "oidc-issuer", options.OIDC.Issuer, "oidc issuer")
 
 	return cmd
 }

@@ -2,150 +2,17 @@ package registry
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"io"
-	"io/ioutil"
-	"log"
-	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/opencontainers/go-digest"
 	"kubegems.io/modelx/pkg/errors"
 	"kubegems.io/modelx/pkg/types"
 )
-
-const ManifestContentLimit = int64(4 * 1024) // 4mb
-
-type Options struct {
-	Listen string
-	TLS    *TLS
-	S3     *S3
-}
-
-func DefaultOptions() *Options {
-	return &Options{
-		Listen: ":8080",
-		TLS:    &TLS{},
-		S3: &S3{
-			Buket:         "registry",
-			URL:           "https://s3.amazonaws.com",
-			AccessKey:     "",
-			SecretKey:     "",
-			PresignExpire: time.Hour,
-			Region:        "",
-		},
-	}
-}
-
-type TLS struct {
-	CertFile string
-	KeyFile  string
-	CAFile   string
-}
-
-func (t *TLS) ToTLSConfig() (*tls.Config, error) {
-	cafile, certfile, keyfile := t.CAFile, t.CertFile, t.KeyFile
-
-	pool, err := x509.SystemCertPool()
-	if err != nil {
-		return nil, err
-	}
-	config := &tls.Config{ClientCAs: pool}
-	if cafile != "" {
-		capem, err := ioutil.ReadFile(cafile)
-		if err != nil {
-			return nil, err
-		}
-		config.ClientCAs.AppendCertsFromPEM(capem)
-	}
-	certificate, err := tls.LoadX509KeyPair(certfile, keyfile)
-	if err != nil {
-		return nil, err
-	}
-	config.Certificates = append(config.Certificates, certificate)
-	return config, nil
-}
-
-type S3 struct {
-	URL           string        `json:"url,omitempty"`
-	Region        string        `json:"region,omitempty"`
-	Buket         string        `json:"buket,omitempty"`
-	AccessKey     string        `json:"accessKey,omitempty"`
-	SecretKey     string        `json:"secretKey,omitempty"`
-	PresignExpire time.Duration `json:"presignExpire,omitempty"`
-}
-
-func Run(ctx context.Context, opts *Options) error {
-	registry, err := NewRegistry(ctx, opts)
-	if err != nil {
-		return err
-	}
-
-	loggedRouter := handlers.CombinedLoggingHandler(os.Stdout, registry.route())
-
-	server := http.Server{
-		Addr:    opts.Listen,
-		Handler: loggedRouter,
-		BaseContext: func(l net.Listener) context.Context {
-			return ctx
-		},
-	}
-	go func() {
-		<-ctx.Done()
-		server.Shutdown(ctx)
-	}()
-	if opts.TLS.CertFile != "" && opts.TLS.KeyFile != "" {
-		log.Printf("registry listening on https: %s", opts.Listen)
-		return server.ListenAndServeTLS(opts.TLS.CertFile, opts.TLS.KeyFile)
-	} else {
-		log.Printf("registry listening on http %s", opts.Listen)
-		return server.ListenAndServe()
-	}
-}
-
-func NewRegistry(ctx context.Context, opt *Options) (*Registry, error) {
-	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(opt.S3.AccessKey, opt.S3.SecretKey, ""),
-		),
-		config.WithRegion(opt.S3.Region),
-		config.WithEndpointResolverWithOptions(
-			aws.EndpointResolverWithOptionsFunc(
-				func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-					return aws.Endpoint{URL: opt.S3.URL}, nil
-				},
-			),
-		),
-	)
-	if err != nil {
-		return nil, err
-	}
-	s3cli := s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.UsePathStyle = true
-	})
-	store := &RegistryStore{
-		Storage: &S3StorageProvider{
-			Bucket:  opt.S3.Buket,
-			Client:  s3cli,
-			PreSign: s3.NewPresignClient(s3cli),
-			Expire:  opt.S3.PresignExpire,
-			Prefix:  "registry",
-		},
-	}
-	return &Registry{Manifest: store}, nil
-}
 
 type Registry struct {
 	Manifest *RegistryStore

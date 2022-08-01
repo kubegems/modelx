@@ -35,6 +35,9 @@ func (s *Registry) HeadManifest(w http.ResponseWriter, r *http.Request) {
 func (s *Registry) GetGlobalIndex(w http.ResponseWriter, r *http.Request) {
 	index, err := s.Manifest.GetGlobalIndex(r.Context(), r.URL.Query().Get("search"))
 	if err != nil {
+		if IsS3StorageNotFound(err) {
+			ResponseOK(w, types.Index{})
+		}
 		ResponseError(w, err)
 		return
 	}
@@ -45,7 +48,7 @@ func (s *Registry) GetIndex(w http.ResponseWriter, r *http.Request) {
 	name, _ := GetRepositoryReference(r)
 	index, err := s.Manifest.GetIndex(r.Context(), name, r.URL.Query().Get("search"))
 	if err != nil {
-		if IsStorageNotFound(err) {
+		if IsS3StorageNotFound(err) {
 			err = errors.NewIndexUnknownError(name)
 		}
 		ResponseError(w, err)
@@ -88,9 +91,6 @@ func (s *Registry) DeleteManifest(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (s *Registry) PostUpload(w http.ResponseWriter, r *http.Request) {
-}
-
 func GetRepositoryReference(r *http.Request) (string, string) {
 	vars := mux.Vars(r)
 	return vars["name"], vars["reference"]
@@ -113,45 +113,51 @@ func (s *Registry) HeadBlob(w http.ResponseWriter, r *http.Request) {
 
 // 如果客户端 包含 contentLength 则直接上传
 // 如果客户端 不包含 contentLength 则返回一个 Location 后续上传至该地址
-func (s *Registry) PostBlob(w http.ResponseWriter, r *http.Request) {
-	s.PutBlob(w, r)
-}
-
 func (s *Registry) PutBlob(w http.ResponseWriter, r *http.Request) {
-	repository, _ := GetRepositoryReference(r)
-	desc, err := ParseDescriptor(r)
-	if err != nil {
-		ResponseError(w, err)
-		return
-	}
-	if err := s.Manifest.PutBlob(r.Context(), repository, *desc, r.Body); err != nil {
-		ResponseError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusCreated)
+	BlobDigestFun(w, r, func(ctx context.Context, repository string, digest digest.Digest) {
+		contentType := r.Header.Get("Content-Type")
+		if contentType == "" {
+			ResponseError(w, errors.NewContentTypeInvalidError("empty"))
+			return
+		}
+		content := StorageContent{
+			ContentLength: r.ContentLength,
+			ContentType:   contentType,
+			Content:       r.Body,
+		}
+		result, err := s.Manifest.PutBlob(r.Context(), repository, digest, content)
+		if err != nil {
+			ResponseError(w, err)
+			return
+		}
+		if location := result.RedirectLocation; location != "" {
+			w.Header().Set("Location", location)
+			w.WriteHeader(http.StatusTemporaryRedirect)
+		} else {
+			w.WriteHeader(http.StatusCreated)
+		}
+	})
 }
 
 func (s *Registry) GetBlob(w http.ResponseWriter, r *http.Request) {
 	BlobDigestFun(w, r, func(ctx context.Context, repository string, digest digest.Digest) {
-		location, err := s.Manifest.GetBlobURL(r.Context(), repository, digest)
+		result, err := s.Manifest.GetBlob(r.Context(), repository, digest)
 		if err != nil {
-			if !errors.IsErrCode(err, errors.ErrCodeUnsupported) {
-				ResponseError(w, err)
-				return
-			}
-			rc, err := s.Manifest.GetBlob(r.Context(), repository, digest)
-			if err != nil {
-				ResponseError(w, err)
-				return
-			}
-			w.Header().Set("Content-Length", strconv.Itoa(int(rc.ContentLength)))
-			w.Header().Set("Content-Type", rc.ContentType)
-			w.WriteHeader(http.StatusOK)
-			io.Copy(w, rc)
+			ResponseError(w, err)
 			return
 		}
-		w.Header().Add("Location", location)
-		w.WriteHeader(http.StatusFound)
+		if location := result.RedirectLocation; location != "" {
+			w.Header().Add("Location", location)
+			w.WriteHeader(http.StatusFound)
+		} else {
+			w.Header().Set("Content-Length", strconv.Itoa(int(result.Content.ContentLength)))
+			w.Header().Set("Content-Type", result.Content.ContentType)
+			w.Header().Set("Content-Encoding", result.Content.ContentEncoding)
+			w.WriteHeader(http.StatusOK)
+
+			io.Copy(w, result.Content.Content)
+		}
+		return
 	})
 }
 
@@ -166,17 +172,17 @@ func BlobDigestFun(w http.ResponseWriter, r *http.Request, fun func(ctx context.
 	fun(r.Context(), name, digest)
 }
 
-func ParseDescriptor(r *http.Request) (*types.Descriptor, error) {
+func ParseDescriptor(r *http.Request) (types.Descriptor, error) {
 	digeststr := mux.Vars(r)["digest"]
 	digest, err := digest.Parse(digeststr)
 	if err != nil {
-		return nil, errors.NewDigestInvalidError(digeststr)
+		return types.Descriptor{}, errors.NewDigestInvalidError(digeststr)
 	}
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "" {
-		return nil, errors.NewContentTypeInvalidError("empty")
+		return types.Descriptor{}, errors.NewContentTypeInvalidError("empty")
 	}
-	descriptor := &types.Descriptor{
+	descriptor := types.Descriptor{
 		Digest:    digest,
 		MediaType: contentType,
 	}

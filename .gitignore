@@ -1,3 +1,5 @@
 certs
 tmp
 .vscode
+bin
+__debug_bin

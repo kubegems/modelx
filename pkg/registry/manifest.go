@@ -17,7 +17,8 @@ const (
 )
 
 type RegistryStore struct {
-	Storage *S3StorageProvider
+	Storage        StorageProvider
+	EnableRedirect bool
 }
 
 func IsReference(reference string, descriptor types.Descriptor) bool {
@@ -35,7 +36,7 @@ func (m *RegistryStore) Exists(ctx context.Context, repository string, reference
 func (m *RegistryStore) GetManifest(ctx context.Context, repository string, reference string) (*types.Manifest, error) {
 	body, err := m.Storage.Get(ctx, ManifestPath(repository, reference))
 	if err != nil {
-		if IsStorageNotFound(err) {
+		if IsS3StorageNotFound(err) {
 			return nil, errors.NewManifestUnknownError(reference)
 		}
 		return nil, errors.NewInternalError(err)

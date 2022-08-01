@@ -2,12 +2,10 @@ package client
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 
 	"github.com/opencontainers/go-digest"
@@ -17,18 +15,8 @@ import (
 	"kubegems.io/modelx/pkg/types"
 )
 
-func Pull(ctx context.Context, ref string, into string, onprogress func(status ProgressStatistic)) error {
-	reference, err := ParseReference(ref)
-	if err != nil {
-		return err
-	}
-	if reference.Repository == "" {
-		return errors.New("repository is not specified")
-	}
-	if into == "" {
-		into = path.Base(reference.Repository)
-	}
-	fmt.Printf("Pulling %s into %s \n", ref, into)
+func PullPack(ctx context.Context, reference Reference, pack Package) error {
+	into := pack.BaseDir
 
 	// check if the directory exists and is empty
 	if dirInfo, err := os.Stat(into); err != nil {
@@ -44,25 +32,28 @@ func Pull(ctx context.Context, ref string, into string, onprogress func(status P
 		}
 	}
 
+	fmt.Printf("Pulling %s into %s \n", reference.String(), into)
 	p := mpb.New(mpb.WithWidth(40))
 
-	remote := RegistryClient{
-		Client: &http.Client{},
-		Addr:   reference.Registry,
-	}
-
-	manifest, err := remote.GetManifest(ctx, reference.Repository, reference.Version)
-	if err != nil {
-		return err
-	}
-
-	progress.ShowImmediatelyProgressBar(p, types.Descriptor{Name: "manifest"}, "done")
-
 	eg := &errgroup.Group{}
-	for _, blob := range manifest.Blobs {
+	for _, blob := range append(pack.Blobs, pack.Config) {
 		blob := blob
 		eg.Go(func() error {
-			return PullBlob(ctx, reference, into, blob, p)
+			ok, err := checkLocalBlob(ctx, into, blob)
+			if err != nil {
+				return err
+			}
+			if ok {
+				progress.ShowImmediatelyProgressBar(p, blob, "already exists")
+				return nil
+			}
+			f, err := prepareWritefile(filepath.Join(into, blob.Name))
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+
+			return PullBlob(ctx, reference, f, blob, p)
 		})
 	}
 	if err := eg.Wait(); err != nil {
@@ -72,27 +63,45 @@ func Pull(ctx context.Context, ref string, into string, onprogress func(status P
 	return nil
 }
 
-func PullBlob(ctx context.Context, reference Reference, into string, desc types.Descriptor, p *mpb.Progress) error {
-	remote := RegistryClient{
-		Client: &http.Client{},
-		Addr:   reference.Registry,
-	}
-	// check local file
-	localfilename := filepath.Join(into, desc.Name)
-
+func checkLocalBlob(ctx context.Context, dir string, desc types.Descriptor) (bool, error) {
+	localfilename := filepath.Join(dir, desc.Name)
 	// file exists, check hash
 	if f, err := os.OpenFile(localfilename, os.O_RDONLY, 0); err == nil {
 		defer f.Close()
-
 		digest, err := digest.FromReader(f)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if digest.String() == desc.Digest.String() {
-			progress.ShowImmediatelyProgressBar(p, desc, "already exists")
-			return nil
+			return true, nil
 		}
-		// file exists but hash is not correct
+	}
+	return false, nil
+}
+
+func prepareWritefile(filename string) (*os.File, error) {
+	// check parent directory
+	dir := filepath.Dir(filename)
+	if _, err := os.Stat(dir); err != nil {
+		if os.IsNotExist(err) {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
+	}
+	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+func PullBlob(ctx context.Context, reference Reference, into io.Writer, desc types.Descriptor, p *mpb.Progress) error {
+	remote := RegistryClient{
+		Client: &http.Client{},
+		Addr:   reference.Registry,
 	}
 
 	content, len, err := remote.GetBlob(ctx, reference.Repository, desc.Digest)
@@ -101,38 +110,18 @@ func PullBlob(ctx context.Context, reference Reference, into string, desc types.
 	}
 	defer content.Close()
 
-	bar := progress.CreateProgressBar(p, desc, "done")
-	defer bar.Close()
+	rc := io.NopCloser(io.Reader(content))
+	defer rc.Close()
 
-	reader := bar.Reader(len, content)
-	if err := WriteBlob(ctx, localfilename, reader); err != nil {
+	if p != nil {
+		bar := progress.NewProgressBar(p, desc, "done")
+		defer bar.Close()
+		rc = bar.WrapReadCloser(len, rc, true)
+	}
+
+	if _, err := io.Copy(into, rc); err != nil {
 		return err
 	}
-	return nil
-}
 
-func WriteBlob(ctx context.Context, filename string, content io.Reader) error {
-	// check parent directory
-	dir := filepath.Dir(filename)
-	if _, err := os.Stat(dir); err != nil {
-		if os.IsNotExist(err) {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return err
-			}
-		} else {
-			return err
-		}
-	}
-	// write file
-	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	_, err = io.Copy(f, content)
-	if err != nil {
-		return err
-	}
 	return nil
 }

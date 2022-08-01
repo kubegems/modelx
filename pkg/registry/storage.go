@@ -8,6 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/utils/pointer"
+	modelxerrors "kubegems.io/modelx/pkg/errors"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -15,9 +18,27 @@ import (
 )
 
 type StorageContent struct {
-	Content       io.ReadCloser
-	ContentLength int64
-	ContentType   string
+	ContentType     string
+	ContentLength   int64
+	ContentEncoding string
+	Content         io.ReadCloser
+}
+
+type StorageMeta struct {
+	Name         string
+	Size         int64
+	LastModified time.Time
+	Metadata     map[string]string
+}
+
+type StorageProvider interface {
+	Put(ctx context.Context, path string, content StorageContent) error
+	PutLocation(ctx context.Context, path string) (string, error)
+	Get(ctx context.Context, path string) (StorageContent, error)
+	GetLocation(ctx context.Context, path string) (string, error)
+	Remove(ctx context.Context, path string) error
+	Exists(ctx context.Context, path string) (bool, error)
+	List(ctx context.Context, path string, isPrefix bool) ([]StorageMeta, error)
 }
 
 func (s StorageContent) Close() error {
@@ -47,13 +68,23 @@ func (m *S3StorageProvider) Put(ctx context.Context, path string, content Storag
 		ContentLength: int64(content.ContentLength),
 		ContentType:   aws.String(content.ContentType),
 	}
-	uploader := manager.NewUploader(m.Client)
-	uploadout, err := uploader.Upload(ctx, uploadobj)
-	if err != nil {
-		return err
+	if _, err := manager.NewUploader(m.Client).Upload(ctx, uploadobj); err != nil {
+		return modelxerrors.NewInternalError(err)
+	} else {
+		return nil
 	}
-	_ = uploadout
-	return nil
+}
+
+func (m *S3StorageProvider) PutLocation(ctx context.Context, path string) (string, error) {
+	putobj := &s3.PutObjectInput{
+		Bucket: aws.String(m.Bucket),
+		Key:    m.prefixedKey(path),
+	}
+	out, err := m.PreSign.PresignPutObject(ctx, putobj, s3.WithPresignExpires(m.Expire))
+	if err != nil {
+		return "", err
+	}
+	return out.URL, nil
 }
 
 func (m *S3StorageProvider) Remove(ctx context.Context, path string) error {
@@ -73,10 +104,23 @@ func (m *S3StorageProvider) Get(ctx context.Context, path string) (StorageConten
 		return StorageContent{}, err
 	}
 	return StorageContent{
-		Content:       getobjout.Body,
-		ContentType:   *getobjout.ContentType,
-		ContentLength: getobjout.ContentLength,
+		Content:         getobjout.Body,
+		ContentType:     pointer.StringDeref(getobjout.ContentType, ""),
+		ContentLength:   getobjout.ContentLength,
+		ContentEncoding: pointer.StringDeref(getobjout.ContentEncoding, ""),
 	}, nil
+}
+
+func (m *S3StorageProvider) GetLocation(ctx context.Context, path string) (string, error) {
+	getobj := &s3.GetObjectInput{
+		Bucket: aws.String(m.Bucket),
+		Key:    m.prefixedKey(path),
+	}
+	out, err := m.PreSign.PresignGetObject(ctx, getobj, s3.WithPresignExpires(m.Expire))
+	if err != nil {
+		return "", err
+	}
+	return out.URL, nil
 }
 
 func (m *S3StorageProvider) Exists(ctx context.Context, path string) (bool, error) {
@@ -85,19 +129,12 @@ func (m *S3StorageProvider) Exists(ctx context.Context, path string) (bool, erro
 		Key:    m.prefixedKey(path),
 	})
 	if err != nil {
-		if IsStorageNotFound(err) {
+		if IsS3StorageNotFound(err) {
 			return false, nil
 		}
 		return false, err
 	}
 	return true, nil
-}
-
-type StorageMeta struct {
-	Name         string
-	Size         int64
-	LastModified time.Time
-	Metadata     map[string]string
 }
 
 func (m *S3StorageProvider) List(ctx context.Context, path string, isPrefix bool) ([]StorageMeta, error) {
@@ -141,31 +178,7 @@ func (m *S3StorageProvider) List(ctx context.Context, path string, isPrefix bool
 	return result, nil
 }
 
-func (m *S3StorageProvider) GetURL(ctx context.Context, path string) (string, error) {
-	getobj := &s3.GetObjectInput{
-		Bucket: aws.String(m.Bucket),
-		Key:    m.prefixedKey(path),
-	}
-	out, err := m.PreSign.PresignGetObject(ctx, getobj, s3.WithPresignExpires(m.Expire))
-	if err != nil {
-		return "", err
-	}
-	return out.URL, nil
-}
-
-func (m *S3StorageProvider) UploadURL(ctx context.Context, path string) (string, error) {
-	putobj := &s3.PutObjectInput{
-		Bucket: aws.String(m.Bucket),
-		Key:    m.prefixedKey(path),
-	}
-	out, err := m.PreSign.PresignPutObject(ctx, putobj, s3.WithPresignExpires(m.Expire))
-	if err != nil {
-		return "", err
-	}
-	return out.URL, nil
-}
-
-func IsStorageNotFound(err error) bool {
+func IsS3StorageNotFound(err error) bool {
 	var apie *http.ResponseError
 	if errors.As(err, &apie) {
 		return apie.HTTPStatusCode() == 404

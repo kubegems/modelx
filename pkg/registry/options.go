@@ -8,10 +8,11 @@ import (
 )
 
 type Options struct {
-	Listen string
-	TLS    *TLSOptions
-	S3     *S3Options
-	OIDC   *OIDCOptions
+	Listen         string
+	TLS            *TLSOptions
+	S3             *S3Options
+	EnableRedirect bool
+	OIDC           *OIDCOptions
 }
 
 type OIDCOptions struct {

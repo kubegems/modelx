@@ -1,11 +1,11 @@
-package main
+package model
 
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"os/signal"
+	"path"
 
 	"github.com/spf13/cobra"
 	"kubegems.io/modelx/pkg/client"
@@ -28,11 +28,27 @@ func NewPullCmd() *cobra.Command {
 			if len(args) == 1 {
 				args = append(args, "")
 			}
-			onprogress := func(status client.ProgressStatistic) {
-				fmt.Printf("%s: %d/%d %s\n", status.Name, status.Count, status.Total, status.Status)
-			}
-			return client.Pull(ctx, args[0], args[1], onprogress)
+			return PullModelx(ctx, args[0], args[1])
 		},
 	}
 	return cmd
+}
+
+func PullModelx(ctx context.Context, ref string, into string) error {
+	reference, err := ParseReference(ref)
+	if err != nil {
+		return err
+	}
+	if reference.Repository == "" {
+		return errors.New("repository is not specified")
+	}
+	if into == "" {
+		into = path.Base(reference.Repository)
+	}
+	manifest, err := client.GetManifest(ctx, reference)
+	if err != nil {
+		return err
+	}
+	pack := client.Package{Manifest: *manifest, BaseDir: into}
+	return client.PullPack(ctx, reference, pack)
 }

@@ -123,35 +123,35 @@ func (m *RegistryStore) RefreshIndex(ctx context.Context, repository string) err
 	return nil
 }
 
-func (m *RegistryStore) GetGlobalIndex(ctx context.Context, search string) (types.GlobalIndex, error) {
+func (m *RegistryStore) GetGlobalIndex(ctx context.Context, search string) (types.Index, error) {
 	body, err := m.Storage.Get(ctx, IndexPath(""))
 	if err != nil {
-		return types.GlobalIndex{}, err
+		return types.Index{}, err
 	}
 	defer body.Close()
 
-	var globalindex types.GlobalIndex
+	var globalindex types.Index
 	if err := json.NewDecoder(body).Decode(&globalindex); err != nil {
-		return types.GlobalIndex{}, err
+		return types.Index{}, err
 	}
 	if search != "" {
 		searchregexp, err := regexp.Compile(search)
 		if err != nil {
-			return types.GlobalIndex{}, errors.NewParameterInvalidError(fmt.Sprintf("search %s: %v", search, err))
+			return types.Index{}, errors.NewParameterInvalidError(fmt.Sprintf("search %s: %v", search, err))
 		}
 		indexies := []types.Descriptor{}
-		for _, index := range globalindex.Indexes {
+		for _, index := range globalindex.Manifests {
 			if searchregexp.MatchString(index.Name) {
 				indexies = append(indexies, index)
 			}
 		}
-		globalindex.Indexes = indexies
+		globalindex.Manifests = indexies
 	}
 	return globalindex, nil
 }
 
-func (m *RegistryStore) PutGlobalIndex(ctx context.Context, index types.GlobalIndex) error {
-	slices.SortFunc(index.Indexes, types.SortDescriptorName)
+func (m *RegistryStore) PutGlobalIndex(ctx context.Context, index types.Index) error {
+	slices.SortFunc(index.Manifests, types.SortDescriptorName)
 	content, err := json.Marshal(index)
 	if err != nil {
 		return errors.NewInternalError(err)
@@ -202,10 +202,10 @@ func (m *RegistryStore) RefreshGlobalIndex(ctx context.Context) error {
 		return errors.NewInternalError(err)
 	}
 
-	index := types.GlobalIndex{}
+	index := types.Index{}
 
 	indexmap.Range(func(key, value any) bool {
-		index.Indexes = append(index.Indexes, value.(types.Descriptor))
+		index.Manifests = append(index.Manifests, value.(types.Descriptor))
 		return true
 	})
 	// save the index

@@ -69,14 +69,16 @@ func NewRegistry(ctx context.Context, opt *Options) (*Registry, error) {
 	s3cli := s3.NewFromConfig(cfg, func(o *s3.Options) {
 		o.UsePathStyle = true
 	})
+	storage := &S3StorageProvider{
+		Bucket:  opt.S3.Buket,
+		Client:  s3cli,
+		Expire:  opt.S3.PresignExpire,
+		Prefix:  "registry",
+		PreSign: s3.NewPresignClient(s3cli),
+	}
 	store := &RegistryStore{
-		Storage: &S3StorageProvider{
-			Bucket:  opt.S3.Buket,
-			Client:  s3cli,
-			PreSign: s3.NewPresignClient(s3cli),
-			Expire:  opt.S3.PresignExpire,
-			Prefix:  "registry",
-		},
+		Storage:        storage,
+		EnableRedirect: opt.EnableRedirect,
 	}
 	return &Registry{Manifest: store}, nil
 }

@@ -13,8 +13,6 @@ const (
 	MediaTypeModelConfigYaml   = "application/vnd.modelx.model.config.v1+yaml"
 	MediaTypeModelFile         = "application/vnd.modelx.model.file.v1"
 
-	AnnotationDescription = "modelx.model.description"
-
 	RegistryIndexFileName = "index.json"
 )
 
@@ -32,12 +30,6 @@ func SortDescriptorName(a, b Descriptor) bool {
 	return strings.Compare(a.Name, b.Name) < 0
 }
 
-type GlobalIndex struct {
-	SchemaVersion int               `json:"schemaVersion"`
-	Indexes       []Descriptor      `json:"indexes"`
-	Annotations   map[string]string `json:"annotations,omitempty"`
-}
-
 type Index struct {
 	SchemaVersion int               `json:"schemaVersion"`
 	MediaType     string            `json:"mediaType,omitempty"`
@@ -48,12 +40,7 @@ type Index struct {
 type Manifest struct {
 	SchemaVersion int               `json:"schemaVersion"`
 	MediaType     string            `json:"mediaType,omitempty"`
+	Config        Descriptor        `json:"config"`
 	Blobs         []Descriptor      `json:"blobs"`
 	Annotations   map[string]string `json:"annotations,omitempty"`
-}
-
-type ModelConfig struct {
-	Description string            `json:"description"`
-	Annotations map[string]string `json:"annotations,omitempty"`
-	Config      any               `json:"config"`
 }

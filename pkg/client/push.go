@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,49 +15,19 @@ import (
 	"kubegems.io/modelx/pkg/types"
 )
 
-type ProgressStatus string
-
-const (
-	ProgressStatusPending ProgressStatus = "pending"
-	ProgressStatusPulling ProgressStatus = "pulling"
-	ProgressStatusSkipped ProgressStatus = "skipped"
-	ProgressStatusPushing ProgressStatus = "pushing"
-	ProgressStatusFailed  ProgressStatus = "failed"
-	ProgressStatusDone    ProgressStatus = "done"
-)
-
-type ProgressStatistic struct {
-	Name   string
-	Status ProgressStatus
-	Count  int64
-	Total  int64
-	Done   bool
-	Failed bool
-}
-
-func Push(ctx context.Context, ref string, dir string) error {
-	reference, err := ParseReference(ref)
-	if err != nil {
-		return err
-	}
-	if reference.Repository == "" {
+func PushPack(ctx context.Context, ref Reference, pack Package) error {
+	fmt.Printf("Pushing to %s \n", ref.String())
+	if ref.Repository == "" {
 		return errors.New("repository is not specified")
 	}
 
-	localmodel, err := PackLocalModel(ctx, dir)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Pushing to %s \n", ref)
-
 	p := mpb.New(mpb.WithWidth(40))
-
 	eg := &errgroup.Group{}
-	for _, blob := range localmodel.Manifest.Blobs {
+	// push all descriptors
+	for _, blob := range append(pack.Blobs, pack.Config) {
 		blob := blob
 		eg.Go(func() error {
-			if err := PushBlob(ctx, reference, localmodel.BaseDir, blob, p); err != nil {
+			if err := PushBlob(ctx, ref, pack.BaseDir, blob, p); err != nil {
 				return err
 			}
 			return nil
@@ -65,9 +36,10 @@ func Push(ctx context.Context, ref string, dir string) error {
 	if err := eg.Wait(); err != nil {
 		return err
 	}
-	if err := PushManifest(ctx, reference, localmodel.Manifest, p); err != nil {
+	if err := PushManifest(ctx, ref, pack.Manifest, p); err != nil {
 		return err
 	}
+	progress.ShowImmediatelyProgressBar(p, types.Descriptor{Name: "manifest"}, "done")
 	p.Wait()
 	return nil
 }
@@ -77,22 +49,14 @@ func PushManifest(ctx context.Context, ref Reference, manifest types.Manifest, p
 		Client: &http.Client{},
 		Addr:   ref.Registry,
 	}
-	bar := progress.CreateProgressBar(p, types.Descriptor{Name: "manifest"}, "done")
-	defer bar.Close()
 	if err := remote.PutManifest(ctx, ref.Repository, ref.Version, manifest); err != nil {
 		return err
 	}
-	bar.Complete()
 	return nil
 }
 
 func PushBlob(ctx context.Context, ref Reference, basedir string, desc types.Descriptor, p *mpb.Progress) error {
 	filename := filepath.Join(basedir, desc.Name)
-	f, err := os.OpenFile(filename, os.O_RDONLY, 0)
-	if err != nil {
-		return err
-	}
-
 	fi, err := os.Stat(filename)
 	if err != nil {
 		return err
@@ -113,27 +77,26 @@ func PushBlob(ctx context.Context, ref Reference, basedir string, desc types.Des
 		return nil
 	}
 
-	bar := progress.CreateProgressBar(p, desc, "done")
-	defer bar.Close()
+	var bar *progress.ProgressBar
+	if p != nil {
+		bar = progress.NewProgressBar(p, desc, "done")
+		defer bar.Close()
+	}
 
-	reader := bar.Reader(filesize, f)
-
-	if err := remote.UploadBlob(ctx, ref.Repository, desc, reader); err != nil {
+	getbody := func() (io.ReadCloser, error) {
+		f, err := os.OpenFile(filename, os.O_RDONLY, 0)
+		if err != nil {
+			return nil, err
+		}
+		readcloser := io.ReadCloser(f)
+		if bar != nil {
+			readcloser = bar.WrapReadCloser(filesize, readcloser, false)
+		}
+		return readcloser, nil
+	}
+	if err := remote.UploadBlob(ctx, ref.Repository, desc, getbody); err != nil {
 		return err
 	}
+	bar.Done()
 	return nil
-}
-
-type CountWriter struct {
-	written  int64
-	OnChange func(written int64)
-}
-
-func (cw *CountWriter) Write(p []byte) (int, error) {
-	n := len(p)
-	cw.written += int64(n)
-	if cw.OnChange != nil {
-		go cw.OnChange(cw.written)
-	}
-	return n, nil
 }

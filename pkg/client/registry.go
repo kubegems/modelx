@@ -18,14 +18,17 @@ type RegistryClient struct {
 	Addr   string
 }
 
-func (t *RegistryClient) UploadBlob(ctx context.Context, repository string, desc types.Descriptor, body io.Reader) error {
+func (t *RegistryClient) UploadBlob(ctx context.Context, repository string, desc types.Descriptor, getbody GetBodyFunc) error {
 	header := map[string]string{
 		"Content-Type": "application/octet-stream",
 	}
 	path := "/" + repository + "/blobs/" + desc.Digest.String()
-	if _, err := t.request(ctx, "PUT", path, header, body, nil); err != nil {
+
+	resp, err := t.request(ctx, "PUT", path, header, getbody, nil)
+	if err != nil {
 		return err
 	}
+	_ = resp
 	return nil
 }
 
@@ -69,8 +72,15 @@ func (t *RegistryClient) PutManifest(ctx context.Context, repository string, ver
 		"Content-Type": "application/json",
 	}
 	path := "/" + repository + "/manifests/" + version
-	_, err := t.request(ctx, "PUT", path, header, manifest, nil)
+
+	body, err := json.Marshal(manifest)
 	if err != nil {
+		return err
+	}
+	getbody := func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(body)), nil
+	}
+	if _, err := t.request(ctx, "PUT", path, header, getbody, nil); err != nil {
 		return err
 	}
 	return nil
@@ -78,7 +88,7 @@ func (t *RegistryClient) PutManifest(ctx context.Context, repository string, ver
 
 func (t *RegistryClient) GetIndex(ctx context.Context, repository string, search string) (*types.Index, error) {
 	index := &types.Index{}
-	path := "/" + repository + "/manifests" + "?search=" + search
+	path := "/" + repository + "/index" + "?search=" + search
 	_, err := t.request(ctx, "GET", path, nil, nil, index)
 	if err != nil {
 		return nil, err
@@ -86,8 +96,8 @@ func (t *RegistryClient) GetIndex(ctx context.Context, repository string, search
 	return index, nil
 }
 
-func (t *RegistryClient) GetGlobalIndex(ctx context.Context, search string) (*types.GlobalIndex, error) {
-	index := &types.GlobalIndex{}
+func (t *RegistryClient) GetGlobalIndex(ctx context.Context, search string) (*types.Index, error) {
+	index := &types.Index{}
 	path := "/" + "?" + url.Values{"search": {search}}.Encode()
 	_, err := t.request(ctx, "GET", path, nil, nil, index)
 	if err != nil {
@@ -96,29 +106,43 @@ func (t *RegistryClient) GetGlobalIndex(ctx context.Context, search string) (*ty
 	return index, nil
 }
 
-func (t *RegistryClient) request(ctx context.Context, method, url string, header map[string]string, body any, into any) (*http.Response, error) {
-	url = t.Addr + url
+type GetBodyFunc func() (io.ReadCloser, error)
+
+func (t *RegistryClient) request(ctx context.Context, method, url string, header map[string]string, getbody GetBodyFunc, into any) (*http.Response, error) {
+	applyreqfuncs := []func(req *http.Request){}
+
+	if len(header) > 0 {
+		applyreqfuncs = append(applyreqfuncs, func(req *http.Request) {
+			for k, v := range header {
+				req.Header.Set(k, v)
+			}
+		})
+	}
 
 	var reqbody io.Reader
-	switch val := body.(type) {
-	case io.Reader:
-		reqbody = val
-	case nil:
-		reqbody = nil
-	default:
-		b, err := json.Marshal(val)
+	if getbody != nil {
+		body, err := getbody()
 		if err != nil {
 			return nil, err
 		}
-		reqbody = bytes.NewReader(b)
+		reqbody = body
+		// In order to http.Client can resolve redirect when body is not empty, a GetBodyFunc must be set.
+		// http.Client use GetBody to get the a new body for the next redirect request.
+		applyreqfuncs = append(applyreqfuncs, func(req *http.Request) {
+			if req.GetBody == nil {
+				req.GetBody = getbody
+			}
+		})
 	}
-	req, err := http.NewRequestWithContext(ctx, method, url, reqbody)
+
+	req, err := http.NewRequestWithContext(ctx, method, t.Addr+url, reqbody)
 	if err != nil {
 		return nil, err
 	}
-	for k, v := range header {
-		req.Header.Set(k, v)
+	for _, f := range applyreqfuncs {
+		f(req)
 	}
+
 	resp, err := t.Client.Do(req)
 	if err != nil {
 		return nil, err
@@ -133,6 +157,7 @@ func (t *RegistryClient) request(ctx context.Context, method, url string, header
 			bodystr, _ := io.ReadAll(resp.Body)
 			apierr.Message = string(bodystr)
 		}
+		apierr.HttpStatus = resp.StatusCode
 		return nil, apierr
 	}
 	if into != nil {

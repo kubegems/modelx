@@ -13,6 +13,12 @@ type Options struct {
 	S3             *S3Options
 	EnableRedirect bool
 	OIDC           *OIDCOptions
+	Oauth          *OauthOptions
+}
+
+type OauthOptions struct {
+	Server       string
+	ValidatePath string
 }
 
 type OIDCOptions struct {
@@ -31,7 +37,8 @@ func DefaultOptions() *Options {
 			PresignExpire: time.Hour,
 			Region:        "",
 		},
-		OIDC: &OIDCOptions{},
+		OIDC:  &OIDCOptions{},
+		Oauth: &OauthOptions{},
 	}
 }
 

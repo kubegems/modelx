@@ -71,6 +71,14 @@ func IsErrCode(err error, code ErrCode) bool {
 	return false
 }
 
+func NewAuthFailedError(err error) ErrorInfo {
+	return ErrorInfo{
+		HttpStatus: http.StatusUnauthorized,
+		Code:       ErrCodeUnauthorized,
+		Message:    err.Error(),
+	}
+}
+
 func NewUnsupportedError(msg string) ErrorInfo {
 	return ErrorInfo{HttpStatus: http.StatusNotImplemented, Code: ErrCodeUnsupported, Message: msg}
 }

@@ -84,6 +84,18 @@ func (r *Repomanager) Get(name string) (RepoDetails, error) {
 	return RepoDetails{}, fmt.Errorf("repo %s not found", name)
 }
 
+func (r *Repomanager) GetByAddr(addr string) (RepoDetails, error) {
+	if err := r.load(); err != nil {
+		return RepoDetails{}, err
+	}
+	for _, repo := range r.repos.Repos {
+		if repo.URL == addr {
+			return repo, nil
+		}
+	}
+	return RepoDetails{}, fmt.Errorf("repo %s not found", addr)
+}
+
 func (r *Repomanager) Remove(name string) error {
 	if err := r.load(); err != nil {
 		return err

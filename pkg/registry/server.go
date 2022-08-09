@@ -28,6 +28,9 @@ func Run(ctx context.Context, opts *Options) error {
 	if opts.OIDC.Issuer != "" {
 		handler = NewOIDCAuthFilter(ctx, opts.OIDC.Issuer, handler)
 	}
+	if opts.Oauth.Server != "" {
+		handler = NewOauthFilter(ctx, handler)
+	}
 
 	server := http.Server{
 		Addr:    opts.Listen,
@@ -80,6 +83,12 @@ func NewRegistry(ctx context.Context, opt *Options) (*Registry, error) {
 		Storage:        storage,
 		EnableRedirect: opt.EnableRedirect,
 	}
+
+	if !strings.HasPrefix(opt.Oauth.Server, "http") {
+		opt.Oauth.Server = "http://" + opt.Oauth.Server
+	}
+	Init(opt.Oauth)
+
 	return &Registry{Manifest: store}, nil
 }
 

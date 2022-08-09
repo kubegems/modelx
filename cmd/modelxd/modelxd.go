@@ -45,6 +45,8 @@ func NewRegistryCmd() *cobra.Command {
 	flags.DurationVar(&options.S3.PresignExpire, "s3-presign-expire", options.S3.PresignExpire, "s3 presign expire")
 	flags.StringVar(&options.S3.Region, "s3-region", options.S3.Region, "s3 region")
 	flags.StringVar(&options.OIDC.Issuer, "oidc-issuer", options.OIDC.Issuer, "oidc issuer")
+	flags.StringVar(&options.Oauth.Server, "oauth-server", options.Oauth.Server, "oauth server addr")
+	flags.StringVar(&options.Oauth.ValidatePath, "oauth-validate-path", options.Oauth.ValidatePath, "oauth validate path")
 	flags.BoolVar(&options.EnableRedirect, "enable-redirect", options.EnableRedirect, "enable storage redirect")
 
 	return cmd

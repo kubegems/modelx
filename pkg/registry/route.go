@@ -24,6 +24,7 @@ func (s *Registry) route() http.Handler {
 	mux = mux.StrictSlash(true)
 	// global index
 	mux.Methods("GET").Path("/").HandlerFunc(s.GetGlobalIndex)
+	mux.Methods("GET").Path("/oauth").HandlerFunc(s.Oauth)
 
 	// repository
 	repository := mux.PathPrefix("/{name:" + NameRegexp + "}").Subrouter()

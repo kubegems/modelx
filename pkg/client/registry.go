@@ -3,18 +3,22 @@ package client
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 
 	"github.com/opencontainers/go-digest"
+	"kubegems.io/modelx/cmd/modelx/repo"
 	"kubegems.io/modelx/pkg/errors"
 	"kubegems.io/modelx/pkg/types"
 )
 
 type RegistryClient struct {
 	Client *http.Client
+	Name   string
 	Addr   string
 }
 
@@ -139,6 +143,16 @@ func (t *RegistryClient) request(ctx context.Context, method, url string, header
 	if err != nil {
 		return nil, err
 	}
+	details, err := repo.DefaultRepoManager.GetByAddr(t.Addr)
+	if err != nil {
+		log.Println(err)
+	}
+	bts, err := base64.StdEncoding.DecodeString(details.Token)
+	if err != nil {
+		log.Println(err)
+	}
+	req.Header.Add("Authorization", "Bearer "+string(bts))
+
 	for _, f := range applyreqfuncs {
 		f(req)
 	}

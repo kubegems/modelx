@@ -97,8 +97,10 @@ func NewOIDCAuthFilter(ctx context.Context, issuer string, next http.Handler) ht
 	if err != nil {
 		log.Fatal(err)
 	}
-	verifier := provider.Verifier(&oidc.Config{SkipClientIDCheck: true})
-
+	verifier := provider.Verifier(&oidc.Config{
+		SkipClientIDCheck: true,
+		SkipIssuerCheck:   true,
+	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		headerAuthorzation := r.Header.Get("Authorization")
 		token := strings.TrimPrefix(headerAuthorzation, "Bearer ")

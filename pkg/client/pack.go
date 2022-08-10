@@ -4,8 +4,8 @@ import (
 	"context"
 	"io/fs"
 	"os"
+	"strings"
 
-	"github.com/opencontainers/go-digest"
 	"golang.org/x/exp/slices"
 	"kubegems.io/modelx/pkg/types"
 )
@@ -15,7 +15,7 @@ type Package struct {
 	BaseDir string
 }
 
-func PackManifest(ctx context.Context, dir string, configfile string, annotations map[string]string) (*Package, error) {
+func PackManifest(ctx context.Context, dir string, configfile string, annotations map[string]string) (types.Manifest, error) {
 	manifest := types.Manifest{
 		Blobs:       []types.Descriptor{},
 		Annotations: annotations,
@@ -25,33 +25,16 @@ func PackManifest(ctx context.Context, dir string, configfile string, annotation
 		if err != nil {
 			return err
 		}
-		if d.IsDir() {
+		if strings.HasPrefix(path, ".") {
 			return nil
 		}
-
-		f, err := fsys.Open(path)
-		if err != nil {
-			return err
+		if d.IsDir() {
+			if strings.HasPrefix(path, ".") {
+				return fs.SkipDir
+			}
+			return nil
 		}
-		defer f.Close()
-
-		fi, err := fs.Stat(fsys, path)
-		if err != nil {
-			return err
-		}
-
-		digest, err := digest.FromReader(f)
-		if err != nil {
-			return err
-		}
-
-		desc := types.Descriptor{
-			Name:     path,
-			Digest:   digest,
-			Size:     fi.Size(),
-			Modified: fi.ModTime(),
-		}
-
+		desc := types.Descriptor{Name: path}
 		if path == configfile {
 			manifest.Config = desc
 		} else {
@@ -60,8 +43,8 @@ func PackManifest(ctx context.Context, dir string, configfile string, annotation
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return types.Manifest{}, err
 	}
 	slices.SortFunc(manifest.Blobs, types.SortDescriptorName)
-	return &Package{Manifest: manifest, BaseDir: dir}, nil
+	return manifest, nil
 }

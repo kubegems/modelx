@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/opencontainers/go-digest"
 	"kubegems.io/modelx/pkg/errors"
@@ -21,7 +22,8 @@ type RegistryClient struct {
 
 func (t *RegistryClient) UploadBlob(ctx context.Context, repository string, desc types.Descriptor, getbody GetBodyFunc) error {
 	header := map[string]string{
-		"Content-Type": "application/octet-stream",
+		"Content-Type":   "application/octet-stream",
+		"Content-Length": strconv.FormatInt(desc.Size, 10),
 	}
 	path := "/" + repository + "/blobs/" + desc.Digest.String()
 

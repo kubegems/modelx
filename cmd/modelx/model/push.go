@@ -21,7 +21,7 @@ func NewPushCmd() *cobra.Command {
 		Example: `
   modex push modelx/hello/gpt@v1 .
 		`,
-		SilenceUsage:      true,
+		SilenceUsage: true,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			if len(args) == 0 {
 				return repo.CompleteRegistryRepositoryVersion(toComplete)
@@ -73,11 +73,11 @@ func PushModel(ctx context.Context, ref string, dir string) error {
 	}
 	annotations[AnnotationDescription] = config.Description
 
-	// pack
-	pack, err := client.PackManifest(ctx, dir, ModelConfigFileName, annotations)
+	// manifest
+	manifest, err := client.PackManifest(ctx, dir, ModelConfigFileName, annotations)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("Pushing to %s \n", reference.String())
-	return reference.Client().PushPack(ctx, reference.Repository, reference.Version, *pack)
+	return reference.Client().Push(ctx, reference.Repository, reference.Version, manifest, dir)
 }

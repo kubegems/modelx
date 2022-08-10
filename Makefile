@@ -18,7 +18,7 @@ ifeq (${IMAGE_TAG},main)
    IMAGE_TAG = latest
 endif
 # Image URL to use all building/pushing image targets
-IMG ?=  ${IMAGE_REGISTRY}/kubegems/kubegems:$(IMAGE_TAG)
+IMG ?=  ${IMAGE_REGISTRY}/kubegems/modelx:$(IMAGE_TAG)
 
 ifdef BUILD_TAGS
 	TAGS = -tags ${BUILD_TAGS}
@@ -60,7 +60,7 @@ build: ## Build binaries.
 	- mkdir -p ${BIN_DIR}
 	CGO_ENABLED=0 go build ${TAGS} -o ${BIN_DIR} -gcflags=all="-N -l" -ldflags="${ldflags}" ${GOPACKAGE}/cmd/...
 
-container: ## Build container image.
+image: ## Build container image.
 ifneq (, $(shell which docker))
 	docker build -t ${IMG} .
 else

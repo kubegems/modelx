@@ -81,6 +81,9 @@ func NewRegistry(ctx context.Context, opt *Options) (*Registry, error) {
 		Storage:        storage,
 		EnableRedirect: opt.EnableRedirect,
 	}
+	if err := store.RefreshGlobalIndex(ctx); err != nil {
+		return nil, err
+	}
 	return &Registry{Manifest: store}, nil
 }
 

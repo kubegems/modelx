@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 
 	"github.com/opencontainers/go-digest"
 	"kubegems.io/modelx/pkg/errors"
@@ -20,14 +19,13 @@ type RegistryClient struct {
 	Authorization string
 }
 
-func (t *RegistryClient) UploadBlob(ctx context.Context, repository string, desc types.Descriptor, getbody GetBodyFunc) error {
+func (t *RegistryClient) UploadBlob(ctx context.Context, repository string, desc types.Descriptor, getbody RqeuestBody) error {
 	header := map[string]string{
-		"Content-Type":   "application/octet-stream",
-		"Content-Length": strconv.FormatInt(desc.Size, 10),
+		"Content-Type": "application/octet-stream",
 	}
 	path := "/" + repository + "/blobs/" + desc.Digest.String()
 
-	resp, err := t.request(ctx, "PUT", path, header, getbody, nil)
+	resp, err := t.request(ctx, "PUT", path, header, &getbody, nil)
 	if err != nil {
 		return err
 	}
@@ -80,10 +78,14 @@ func (t *RegistryClient) PutManifest(ctx context.Context, repository string, ver
 	if err != nil {
 		return err
 	}
-	getbody := func() (io.ReadCloser, error) {
-		return io.NopCloser(bytes.NewReader(body)), nil
+
+	reqbody := &RqeuestBody{
+		ContentLength: int64(len(body)),
+		ContentBody: func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(body)), nil
+		},
 	}
-	if _, err := t.request(ctx, "PUT", path, header, getbody, nil); err != nil {
+	if _, err := t.request(ctx, "PUT", path, header, reqbody, nil); err != nil {
 		return err
 	}
 	return nil
@@ -119,7 +121,12 @@ func (t *RegistryClient) GetGlobalIndex(ctx context.Context, search string) (*ty
 
 type GetBodyFunc func() (io.ReadCloser, error)
 
-func (t *RegistryClient) request(ctx context.Context, method, url string, header map[string]string, getbody GetBodyFunc, into any) (*http.Response, error) {
+type RqeuestBody struct {
+	ContentLength int64
+	ContentBody   func() (io.ReadCloser, error)
+}
+
+func (t *RegistryClient) request(ctx context.Context, method, url string, header map[string]string, body *RqeuestBody, into any) (*http.Response, error) {
 	applyreqfuncs := []func(req *http.Request){}
 
 	if len(header) > 0 {
@@ -131,18 +138,17 @@ func (t *RegistryClient) request(ctx context.Context, method, url string, header
 	}
 
 	var reqbody io.Reader
-	if getbody != nil {
-		body, err := getbody()
+	if body != nil {
+		bodyReader, err := body.ContentBody()
 		if err != nil {
 			return nil, err
 		}
-		reqbody = body
+		reqbody = bodyReader
 		// In order to http.Client can resolve redirect when body is not empty, a GetBodyFunc must be set.
 		// http.Client use GetBody to get the a new body for the next redirect request.
 		applyreqfuncs = append(applyreqfuncs, func(req *http.Request) {
-			if req.GetBody == nil {
-				req.GetBody = getbody
-			}
+			req.GetBody = body.ContentBody
+			req.ContentLength = body.ContentLength
 		})
 	}
 

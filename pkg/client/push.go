@@ -14,10 +14,13 @@ import (
 	"kubegems.io/modelx/pkg/types"
 )
 
+const PushConcurrency = 5
+
 func (c Client) Push(ctx context.Context, repo, version string, manifest types.Manifest, basedir string) error {
 	p := mpb.New(mpb.WithWidth(40))
 
-	eg := &errgroup.Group{}
+	eg := errgroup.Group{}
+	eg.SetLimit(PushConcurrency)
 	for i := range manifest.Blobs {
 		i := i
 		eg.Go(func() error {
@@ -90,7 +93,12 @@ func (c Client) PushBlob(ctx context.Context, repo string, basedir string, desc 
 		}
 		return readcloser, nil
 	}
-	if err := c.remote.UploadBlob(ctx, repo, *desc, getbody); err != nil {
+
+	reqbody := RqeuestBody{
+		ContentLength: desc.Size,
+		ContentBody:   getbody,
+	}
+	if err := c.remote.UploadBlob(ctx, repo, *desc, reqbody); err != nil {
 		return err
 	}
 	bar.Done()

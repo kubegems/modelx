@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gorilla/handlers"
+	"kubegems.io/modelx/pkg/errors"
 )
 
 func Run(ctx context.Context, opts *Options) error {
@@ -27,9 +28,6 @@ func Run(ctx context.Context, opts *Options) error {
 
 	if opts.OIDC.Issuer != "" {
 		handler = NewOIDCAuthFilter(ctx, opts.OIDC.Issuer, handler)
-	}
-	if opts.Oauth.Server != "" {
-		handler = NewOauthFilter(ctx, handler)
 	}
 
 	server := http.Server{
@@ -83,12 +81,6 @@ func NewRegistry(ctx context.Context, opt *Options) (*Registry, error) {
 		Storage:        storage,
 		EnableRedirect: opt.EnableRedirect,
 	}
-
-	if !strings.HasPrefix(opt.Oauth.Server, "http") {
-		opt.Oauth.Server = "http://" + opt.Oauth.Server
-	}
-	Init(opt.Oauth)
-
 	return &Registry{Manifest: store}, nil
 }
 
@@ -108,12 +100,12 @@ func NewOIDCAuthFilter(ctx context.Context, issuer string, next http.Handler) ht
 			token = r.URL.Query().Get("access_token")
 		}
 		if len(token) == 0 {
-			w.WriteHeader(http.StatusUnauthorized)
+			ResponseError(w, errors.NewUnauthorizedError("missing access token"))
 			return
 		}
 		idtoken, err := verifier.Verify(r.Context(), token)
 		if err != nil {
-			w.WriteHeader(http.StatusUnauthorized)
+			ResponseError(w, errors.NewUnauthorizedError("invalid access token"))
 			return
 		}
 		r.Header.Set("username", idtoken.Subject)

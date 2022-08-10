@@ -17,8 +17,6 @@ import (
 	"kubegems.io/modelx/pkg/types"
 )
 
-const IndexCategory = "indexes"
-
 // Gettypes.Index returns the types.Index for the given repository. if no manifests return an empty types.Index.
 func (m *RegistryStore) GetIndex(ctx context.Context, repository string, search string) (types.Index, error) {
 	body, err := m.Storage.Get(ctx, IndexPath(repository))

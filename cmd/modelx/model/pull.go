@@ -3,22 +3,32 @@ package model
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"path"
 
 	"github.com/spf13/cobra"
-	"kubegems.io/modelx/pkg/client"
+	"kubegems.io/modelx/cmd/modelx/repo"
 )
 
 func NewPullCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pull",
-		Short: "pull <url> <dir>",
+		Short: "pull a model from a repository",
 		Example: `
   modex pull  https://registry.example.com/repo/name@version .
 		`,
 		SilenceUsage: true,
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return repo.CompleteRegistryRepositoryVersion(toComplete)
+			}
+			if len(args) == 1 {
+				return nil, cobra.ShellCompDirectiveFilterDirs
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 			defer cancel()
@@ -45,10 +55,6 @@ func PullModelx(ctx context.Context, ref string, into string) error {
 	if into == "" {
 		into = path.Base(reference.Repository)
 	}
-	manifest, err := client.GetManifest(ctx, reference)
-	if err != nil {
-		return err
-	}
-	pack := client.Package{Manifest: *manifest, BaseDir: into}
-	return client.PullPack(ctx, reference, pack)
+	fmt.Printf("Pulling %s into %s \n", reference.String(), into)
+	return reference.Client().Pull(ctx, reference.Repository, reference.Version, into)
 }

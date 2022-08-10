@@ -9,7 +9,7 @@ import (
 	"os/signal"
 
 	"github.com/spf13/cobra"
-	"kubegems.io/modelx/pkg/client"
+	"kubegems.io/modelx/cmd/modelx/repo"
 )
 
 const (
@@ -30,11 +30,17 @@ type ModelConfig struct {
 func NewInfoCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "info",
-		Short: "info <url>",
+		Short: "get config of model",
 		Example: `
   modex info  https://registry.example.com/repo/name@version
 		`,
 		SilenceUsage: true,
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return repo.CompleteRegistryRepositoryVersion(toComplete)
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 			defer cancel()
@@ -60,12 +66,13 @@ func GetConfig(ctx context.Context, ref string) ([]byte, error) {
 	if reference.Repository == "" {
 		return nil, errors.New("repository is not specified")
 	}
-	manfiest, err := client.GetManifest(ctx, reference)
+	cli := reference.Client()
+	manfiest, err := cli.GetManifest(ctx, reference.Repository, reference.Version)
 	if err != nil {
 		return nil, err
 	}
 	content := bytes.NewBuffer(nil)
-	if err := client.PullBlob(ctx, reference, content, manfiest.Config, nil); err != nil {
+	if err := cli.PullBlob(ctx, reference.Repository, content, manfiest.Config, nil); err != nil {
 		return nil, err
 	}
 	return content.Bytes(), nil

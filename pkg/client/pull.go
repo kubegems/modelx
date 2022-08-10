@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 
@@ -15,9 +14,7 @@ import (
 	"kubegems.io/modelx/pkg/types"
 )
 
-func PullPack(ctx context.Context, reference Reference, pack Package) error {
-	into := pack.BaseDir
-
+func (c Client) Pull(ctx context.Context, repo string, version string, into string) error {
 	// check if the directory exists and is empty
 	if dirInfo, err := os.Stat(into); err != nil {
 		if !os.IsNotExist(err) {
@@ -32,11 +29,15 @@ func PullPack(ctx context.Context, reference Reference, pack Package) error {
 		}
 	}
 
-	fmt.Printf("Pulling %s into %s \n", reference.String(), into)
+	manifest, err := c.GetManifest(ctx, repo, version)
+	if err != nil {
+		return err
+	}
+
 	p := mpb.New(mpb.WithWidth(40))
 
 	eg := &errgroup.Group{}
-	for _, blob := range append(pack.Blobs, pack.Config) {
+	for _, blob := range append(manifest.Blobs, manifest.Config) {
 		blob := blob
 		eg.Go(func() error {
 			ok, err := checkLocalBlob(ctx, into, blob)
@@ -53,7 +54,7 @@ func PullPack(ctx context.Context, reference Reference, pack Package) error {
 			}
 			defer f.Close()
 
-			return PullBlob(ctx, reference, f, blob, p)
+			return c.PullBlob(ctx, repo, f, blob, p)
 		})
 	}
 	if err := eg.Wait(); err != nil {
@@ -98,13 +99,8 @@ func prepareWritefile(filename string) (*os.File, error) {
 	return f, nil
 }
 
-func PullBlob(ctx context.Context, reference Reference, into io.Writer, desc types.Descriptor, p *mpb.Progress) error {
-	remote := RegistryClient{
-		Client: &http.Client{},
-		Addr:   reference.Registry,
-	}
-
-	content, len, err := remote.GetBlob(ctx, reference.Repository, desc.Digest)
+func (c Client) PullBlob(ctx context.Context, repo string, into io.Writer, desc types.Descriptor, p *mpb.Progress) error {
+	content, len, err := c.remote.GetBlob(ctx, repo, desc.Digest)
 	if err != nil {
 		return err
 	}

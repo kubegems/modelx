@@ -11,18 +11,9 @@ import (
 	"kubegems.io/modelx/pkg/types"
 )
 
-const (
-	IndexFileName     = "index.json"
-	AnnotationVersion = "modelx.model.version"
-)
-
 type RegistryStore struct {
 	Storage        StorageProvider
 	EnableRedirect bool
-}
-
-func IsReference(reference string, descriptor types.Descriptor) bool {
-	return descriptor.Annotations[AnnotationVersion] == reference || reference == descriptor.Digest.String()
 }
 
 func (m *RegistryStore) Exists(ctx context.Context, repository string, reference string) (bool, error) {

@@ -16,7 +16,7 @@ func NewInitCmd() *cobra.Command {
 	force := false
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "init <path>",
+		Short: "init an new model at path",
 		Example: `
   modex init .
 		`,

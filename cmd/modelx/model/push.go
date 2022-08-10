@@ -10,17 +10,27 @@ import (
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
+	"kubegems.io/modelx/cmd/modelx/repo"
 	"kubegems.io/modelx/pkg/client"
 )
 
 func NewPushCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "push",
-		Short: "push <repo>:<name>@<version> <dir>",
+		Short: "push a model to a modelx repository",
 		Example: `
   modex push modelx/hello/gpt@v1 .
 		`,
-		SilenceUsage: true,
+		SilenceUsage:      true,
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return repo.CompleteRegistryRepositoryVersion(toComplete)
+			}
+			if len(args) == 1 {
+				return nil, cobra.ShellCompDirectiveFilterDirs
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 			defer cancel()
@@ -68,5 +78,6 @@ func PushModel(ctx context.Context, ref string, dir string) error {
 	if err != nil {
 		return err
 	}
-	return client.PushPack(ctx, reference, *pack)
+	fmt.Printf("Pushing to %s \n", reference.String())
+	return reference.Client().PushPack(ctx, reference.Repository, reference.Version, *pack)
 }

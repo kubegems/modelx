@@ -24,8 +24,6 @@ func (s *Registry) route() http.Handler {
 	mux = mux.StrictSlash(true)
 	// global index
 	mux.Methods("GET").Path("/").HandlerFunc(s.GetGlobalIndex)
-	mux.Methods("GET").Path("/oauth").HandlerFunc(s.Oauth)
-
 	// repository
 	repository := mux.PathPrefix("/{name:" + NameRegexp + "}").Subrouter()
 	// index
@@ -33,7 +31,7 @@ func (s *Registry) route() http.Handler {
 	// repository/manifests
 	manifests := repository.PathPrefix("/manifests").Subrouter()
 	manifests.Methods("GET").Path("/{reference:" + ReferenceRegexp + "}").HandlerFunc(s.GetManifest)
-	manifests.Methods("PUT").Path("/{reference:" + ReferenceRegexp + "}").HandlerFunc(s.PutManifest)
+	manifests.Methods("PUT").Path("/{reference:" + ReferenceRegexp + "}").HandlerFunc(MaxBytesReadHandler(s.PutManifest, MaxBytesRead))
 	manifests.Methods("DELETE").Path("/{reference:" + ReferenceRegexp + "}").HandlerFunc(s.DeleteManifest)
 
 	// repository/blobs

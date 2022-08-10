@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
+	"kubegems.io/modelx/pkg/client"
 )
 
 func NewRepoCmd() *cobra.Command {
@@ -17,7 +18,6 @@ func NewRepoCmd() *cobra.Command {
 		Long:  "Repository management",
 	}
 	cmd.AddCommand(NewRepoAddCmd())
-	cmd.AddCommand(NewRepoLoginCmd())
 	cmd.AddCommand(NewRepoListCmd())
 	cmd.AddCommand(NewRepoRemoveCmd())
 
@@ -32,6 +32,10 @@ type RepoDetails struct {
 	Name  string `json:"name,omitempty"`
 	URL   string `json:"url,omitempty"`
 	Token string `json:"token,omitempty"`
+}
+
+func (r RepoDetails) Client() *client.Client {
+	return client.NewClient(r.URL, "Bearer "+r.Token)
 }
 
 var DefaultRepoManager = Repomanager{
@@ -84,18 +88,6 @@ func (r *Repomanager) Get(name string) (RepoDetails, error) {
 	return RepoDetails{}, fmt.Errorf("repo %s not found", name)
 }
 
-func (r *Repomanager) GetByAddr(addr string) (RepoDetails, error) {
-	if err := r.load(); err != nil {
-		return RepoDetails{}, err
-	}
-	for _, repo := range r.repos.Repos {
-		if repo.URL == addr {
-			return repo, nil
-		}
-	}
-	return RepoDetails{}, fmt.Errorf("repo %s not found", addr)
-}
-
 func (r *Repomanager) Remove(name string) error {
 	if err := r.load(); err != nil {
 		return err
@@ -109,11 +101,11 @@ func (r *Repomanager) Remove(name string) error {
 	return fmt.Errorf("repo %s not found", name)
 }
 
-func (r *Repomanager) List() ([]RepoDetails, error) {
+func (r *Repomanager) List() []RepoDetails {
 	if err := r.load(); err != nil {
-		return nil, err
+		return []RepoDetails{}
 	}
-	return r.repos.Repos, nil
+	return r.repos.Repos
 }
 
 func (r *Repomanager) load() error {
@@ -131,7 +123,7 @@ func (r *Repomanager) load() error {
 }
 
 func (r *Repomanager) save() error {
-	content, err := json.Marshal(r.repos)
+	content, err := json.MarshalIndent(r.repos, "", "  ")
 	if err != nil {
 		return err
 	}

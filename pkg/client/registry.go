@@ -3,23 +3,20 @@ package client
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 
 	"github.com/opencontainers/go-digest"
-	"kubegems.io/modelx/cmd/modelx/repo"
 	"kubegems.io/modelx/pkg/errors"
 	"kubegems.io/modelx/pkg/types"
 )
 
 type RegistryClient struct {
-	Client *http.Client
-	Name   string
-	Addr   string
+	Client        *http.Client
+	Registry      string
+	Authorization string
 }
 
 func (t *RegistryClient) UploadBlob(ctx context.Context, repository string, desc types.Descriptor, getbody GetBodyFunc) error {
@@ -101,8 +98,16 @@ func (t *RegistryClient) GetIndex(ctx context.Context, repository string, search
 }
 
 func (t *RegistryClient) GetGlobalIndex(ctx context.Context, search string) (*types.Index, error) {
+	query := url.Values{}
+	if search != "" {
+		query.Add("search", search)
+	}
+	path := "/"
+	if len(query) > 0 {
+		path += "?" + query.Encode()
+	}
+
 	index := &types.Index{}
-	path := "/" + "?" + url.Values{"search": {search}}.Encode()
 	_, err := t.request(ctx, "GET", path, nil, nil, index)
 	if err != nil {
 		return nil, err
@@ -139,19 +144,11 @@ func (t *RegistryClient) request(ctx context.Context, method, url string, header
 		})
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, t.Addr+url, reqbody)
+	req, err := http.NewRequestWithContext(ctx, method, t.Registry+url, reqbody)
 	if err != nil {
 		return nil, err
 	}
-	details, err := repo.DefaultRepoManager.GetByAddr(t.Addr)
-	if err != nil {
-		log.Println(err)
-	}
-	bts, err := base64.StdEncoding.DecodeString(details.Token)
-	if err != nil {
-		log.Println(err)
-	}
-	req.Header.Add("Authorization", "Bearer "+string(bts))
+	req.Header.Set("Authorization", t.Authorization)
 
 	for _, f := range applyreqfuncs {
 		f(req)

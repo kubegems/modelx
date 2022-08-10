@@ -1,9 +1,6 @@
 package registry
 
 import (
-	"crypto/tls"
-	"crypto/x509"
-	"io/ioutil"
 	"time"
 )
 
@@ -13,12 +10,6 @@ type Options struct {
 	S3             *S3Options
 	EnableRedirect bool
 	OIDC           *OIDCOptions
-	Oauth          *OauthOptions
-}
-
-type OauthOptions struct {
-	Server       string
-	ValidatePath string
 }
 
 type OIDCOptions struct {
@@ -37,8 +28,7 @@ func DefaultOptions() *Options {
 			PresignExpire: time.Hour,
 			Region:        "",
 		},
-		OIDC:  &OIDCOptions{},
-		Oauth: &OauthOptions{},
+		OIDC: &OIDCOptions{},
 	}
 }
 
@@ -46,29 +36,6 @@ type TLSOptions struct {
 	CertFile string
 	KeyFile  string
 	CAFile   string
-}
-
-func (t *TLSOptions) ToTLSConfig() (*tls.Config, error) {
-	cafile, certfile, keyfile := t.CAFile, t.CertFile, t.KeyFile
-
-	pool, err := x509.SystemCertPool()
-	if err != nil {
-		return nil, err
-	}
-	config := &tls.Config{ClientCAs: pool}
-	if cafile != "" {
-		capem, err := ioutil.ReadFile(cafile)
-		if err != nil {
-			return nil, err
-		}
-		config.ClientCAs.AppendCertsFromPEM(capem)
-	}
-	certificate, err := tls.LoadX509KeyPair(certfile, keyfile)
-	if err != nil {
-		return nil, err
-	}
-	config.Certificates = append(config.Certificates, certificate)
-	return config, nil
 }
 
 type S3Options struct {

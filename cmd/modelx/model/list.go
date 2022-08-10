@@ -8,7 +8,7 @@ import (
 
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/spf13/cobra"
-	"kubegems.io/modelx/pkg/client"
+	"kubegems.io/modelx/cmd/modelx/repo"
 	"kubegems.io/modelx/pkg/types"
 	"kubegems.io/modelx/pkg/version"
 )
@@ -17,7 +17,7 @@ func NewListCmd() *cobra.Command {
 	search := ""
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "list <url>",
+		Short: "list manifests",
 		Example: `
   modex list  https://registry.example.com --search "gpt"
   modex list  https://registry.example.com/repo/model --search "v*"
@@ -25,6 +25,12 @@ func NewListCmd() *cobra.Command {
 		`,
 		Version:      version.Get().String(),
 		SilenceUsage: true,
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return repo.CompleteRegistryRepositoryVersion(toComplete)
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 			defer cancel()
@@ -59,10 +65,14 @@ func List(ctx context.Context, ref string, search string) (*ShowList, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	cli := reference.Client()
+	repo, version := reference.Repository, reference.Version
+
 	switch {
-	case reference.Repository == "" && reference.Version == "":
+	case repo == "" && version == "":
 		// list repositories
-		index, err := client.GetIndex(ctx, reference, search)
+		index, err := cli.GetGlobalIndex(ctx, search)
 		if err != nil {
 			return nil, err
 		}
@@ -71,13 +81,13 @@ func List(ctx context.Context, ref string, search string) (*ShowList, error) {
 		}
 
 		for _, item := range index.Manifests {
-			ref := client.Reference{Registry: reference.Registry, Repository: item.Name}
+			ref := Reference{Registry: reference.Registry, Repository: item.Name}
 			show.Items = append(show.Items, []any{item.Name, ref.String(), item.Annotations[AnnotationDescription]})
 		}
 		return show, nil
-	case reference.Repository != "" && reference.Version != "":
+	case repo != "" && version != "":
 		// list files
-		manifest, err := client.GetManifest(ctx, reference)
+		manifest, err := cli.GetManifest(ctx, repo, version)
 		if err != nil {
 			return nil, err
 		}
@@ -89,9 +99,9 @@ func List(ctx context.Context, ref string, search string) (*ShowList, error) {
 			show.Items = append(show.Items, []any{item.Name, item.Size, item.Digest, item.Modified})
 		}
 		return show, nil
-	case reference.Repository != "" && reference.Version == "":
+	case repo != "" && version == "":
 		// list versions
-		index, err := client.GetIndex(ctx, reference, search)
+		index, err := cli.GetIndex(ctx, repo, search)
 		if err != nil {
 			return nil, err
 		}
@@ -99,7 +109,7 @@ func List(ctx context.Context, ref string, search string) (*ShowList, error) {
 			Header: []any{"Version", "URL", "Description"},
 		}
 		for _, item := range index.Manifests {
-			ref := client.Reference{Registry: reference.Registry, Repository: reference.Repository, Version: item.Name}
+			ref := Reference{Registry: reference.Registry, Repository: repo, Version: item.Name}
 			show.Items = append(show.Items, []any{item.Name, ref.String(), item.Annotations[AnnotationDescription]})
 		}
 		return show, nil

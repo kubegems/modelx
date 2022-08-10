@@ -1,72 +1,63 @@
 package model
 
 import (
-	"bufio"
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"kubegems.io/modelx/cmd/modelx/repo"
+	"kubegems.io/modelx/pkg/client"
 )
 
 func NewLoginCmd() *cobra.Command {
+	token := ""
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "login <url>",
+		Short: "login to a modelx repository",
 		Example: `
-  modex login https://registry.example.com
+  modelx login <repo> [--token <token>]
 		`,
 		SilenceUsage: true,
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return repo.CompleteRegistry(toComplete)
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 			defer cancel()
 			if len(args) == 0 {
 				return errors.New("at least one argument is required")
 			}
-			fmt.Println("please input token:")
-			reader := bufio.NewReader(os.Stdin)
-			token, err := reader.ReadString('\n')
-			token = strings.Trim(token, "\n")
-			if err != nil {
-				return err
+			if token == "" {
+				fmt.Print("Token: ")
+				fmt.Scanln(&token)
 			}
 			return LoginModelx(ctx, args[0], token)
 		},
 	}
+	cmd.Flags().StringVarP(&token, "token", "t", "", "token")
 	return cmd
 }
 
-func LoginModelx(ctx context.Context, ref string, token string) error {
-	reference, err := ParseReference(ref)
+func LoginModelx(ctx context.Context, reponame string, token string) error {
+	repoDetails, err := repo.DefaultRepoManager.Get(reponame)
 	if err != nil {
 		return err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/oauth", reference.Registry), nil)
-	if err != nil {
+	repoDetails.Token = token
+	if err := repoDetails.Client().Ping(ctx); err != nil {
 		return err
 	}
-	req.Header.Add("Authorization", "Bearer "+token)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	msg, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf(string(msg))
-	}
+	fmt.Printf("Login successful for %s\n", reponame)
+	return repo.DefaultRepoManager.Set(repoDetails)
+}
 
-	return repo.DefaultRepoManager.Set(repo.RepoDetails{
-		Name:  ref,
-		URL:   reference.Registry,
-		Token: base64.StdEncoding.EncodeToString([]byte(token)),
-	})
-
+func Ping(ctx context.Context, repo string, token string) error {
+	token = "Bearer " + token
+	return client.NewClient(repo, token).Ping(ctx)
 }

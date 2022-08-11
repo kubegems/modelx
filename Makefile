@@ -20,10 +20,6 @@ endif
 # Image URL to use all building/pushing image targets
 IMG ?=  ${IMAGE_REGISTRY}/kubegems/modelx:$(IMAGE_TAG)
 
-ifdef BUILD_TAGS
-	TAGS = -tags ${BUILD_TAGS}
-endif
-
 GOPACKAGE=$(shell go list -m)
 ldflags+=-w -s
 ldflags+=-X '${GOPACKAGE}/pkg/version.gitVersion=${GIT_VERSION}'
@@ -54,11 +50,24 @@ help: ## Display this help.
 check: linter ## Static code check.
 	${LINTER} run ./...
 
+define build
+	@echo "Building ${1}/${2}"
+	@CGO_ENABLED=0 GOOS=${1} GOARCH=$(2) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/modelx-$(1)-$(2) ${GOPACKAGE}/cmd/modelx
+	@CGO_ENABLED=0 GOOS=${1} GOARCH=$(2) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/modelxd-$(1)-$(2) ${GOPACKAGE}/cmd/modelxd
+endef
 
 ##@ Build
+OS:=$(shell go env GOOS)
+ARCH:=$(shell go env GOARCH)
 build: ## Build binaries.
-	- mkdir -p ${BIN_DIR}
-	CGO_ENABLED=0 go build ${TAGS} -o ${BIN_DIR} -gcflags=all="-N -l" -ldflags="${ldflags}" ${GOPACKAGE}/cmd/...
+	$(call build,${OS},${ARCH})
+
+build-all:
+	$(call build,linux,amd64)
+	$(call build,linux,arm64)
+	$(call build,darwin,amd64)
+	$(call build,darwin,arm64)
+	$(call build,windows,amd64)
 
 image: ## Build container image.
 ifneq (, $(shell which docker))

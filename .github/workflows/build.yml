@@ -25,7 +25,7 @@ jobs:
           key: ${{ runner.os }}-build-${{ hashFiles('**/go.sum') }}
       # Build binary
       - name: Build
-        run: make build
+        run: make build-all
       - name: Artifact
         # https://github.com/actions/upload-artifact
         uses: actions/upload-artifact@v3

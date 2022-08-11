@@ -1,4 +1,5 @@
 FROM alpine
-COPY bin/modelx bin/modelxd /app/
+ENV OS=linux ARCH=amd64
+COPY bin/modelxd-${OS}-${ARCH} /app/
 WORKDIR /app
-ENTRYPOINT ["/app/modelxd"]
+ENTRYPOINT ["/app/modelxd-${OS}-${ARCH}"]

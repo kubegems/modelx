@@ -17,6 +17,11 @@ import (
 	"kubegems.io/modelx/pkg/types"
 )
 
+const (
+	RegistryIndexFileName   = "index.json"
+	MediaTypeModelIndexJson = "application/vnd.modelx.model.index.v1.json"
+)
+
 // Gettypes.Index returns the types.Index for the given repository. if no manifests return an empty types.Index.
 func (m *RegistryStore) GetIndex(ctx context.Context, repository string, search string) (types.Index, error) {
 	body, err := m.Storage.Get(ctx, IndexPath(repository))
@@ -67,7 +72,7 @@ func (m *RegistryStore) PutIndex(ctx context.Context, repository string, index t
 	storageContent := StorageContent{
 		Content:       io.NopCloser(bytes.NewReader(content)),
 		ContentLength: int64(len(content)),
-		ContentType:   types.MediaTypeModelIndexJson,
+		ContentType:   MediaTypeModelIndexJson,
 	}
 	if err := m.Storage.Put(ctx, IndexPath(repository), storageContent); err != nil {
 		return errors.NewInternalError(err)
@@ -157,7 +162,7 @@ func (m *RegistryStore) PutGlobalIndex(ctx context.Context, index types.Index) e
 	storageContent := StorageContent{
 		Content:       io.NopCloser(bytes.NewReader(content)),
 		ContentLength: int64(len(content)),
-		ContentType:   types.MediaTypeModelIndexJson,
+		ContentType:   MediaTypeModelIndexJson,
 	}
 	if err := m.Storage.Put(ctx, IndexPath(""), storageContent); err != nil {
 		return errors.NewInternalError(err)
@@ -176,7 +181,7 @@ func (m *RegistryStore) RefreshGlobalIndex(ctx context.Context) error {
 	// indexmap := map[string]types.Descriptor{}
 	indexmap := sync.Map{}
 	for _, meta := range filemetas {
-		if meta.Name == types.RegistryIndexFileName || path.Base(meta.Name) != types.RegistryIndexFileName {
+		if meta.Name == RegistryIndexFileName || path.Base(meta.Name) != RegistryIndexFileName {
 			continue
 		}
 		repository := path.Dir(meta.Name)
@@ -188,7 +193,7 @@ func (m *RegistryStore) RefreshGlobalIndex(ctx context.Context) error {
 
 			desc := types.Descriptor{
 				Name:        repository,
-				MediaType:   types.MediaTypeModelIndexJson,
+				MediaType:   MediaTypeModelIndexJson,
 				Annotations: index.Annotations,
 			}
 			indexmap.Store(repository, desc)
@@ -211,5 +216,5 @@ func (m *RegistryStore) RefreshGlobalIndex(ctx context.Context) error {
 }
 
 func IndexPath(repository string) string {
-	return path.Join(repository, types.RegistryIndexFileName)
+	return path.Join(repository, RegistryIndexFileName)
 }

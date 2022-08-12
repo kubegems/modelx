@@ -48,13 +48,25 @@ func (c Client) Pull(ctx context.Context, repo string, version string, into stri
 				progress.ShowImmediatelyProgressBar(p, blob, "already exists")
 				return nil
 			}
-			f, err := prepareWritefile(filepath.Join(into, blob.Name))
+			readercloser, err := c.PullBlob(ctx, repo, blob, p)
 			if err != nil {
 				return err
 			}
-			defer f.Close()
+			defer readercloser.Close()
 
-			return c.PullBlob(ctx, repo, f, blob, p)
+			switch blob.MediaType {
+			case MediaTypeModelDirectoryTarGz:
+				basedir := filepath.Join(into, blob.Name)
+				return UnTGZ(ctx, basedir, readercloser)
+			default:
+				f, err := os.Create(filepath.Join(into, blob.Name))
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+				_, err = io.Copy(f, readercloser)
+				return err
+			}
 		})
 	}
 	if err := eg.Wait(); err != nil {
@@ -66,8 +78,27 @@ func (c Client) Pull(ctx context.Context, repo string, version string, into stri
 
 func checkLocalBlob(ctx context.Context, dir string, desc types.Descriptor) (bool, error) {
 	localfilename := filepath.Join(dir, desc.Name)
+
+	fi, err := os.Stat(localfilename)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if fi.IsDir() {
+		digest, err := TGZ(ctx, localfilename, "")
+		if err != nil {
+			return false, err
+		}
+		if digest.String() == desc.Digest.String() {
+			return true, nil
+		}
+		return false, nil
+	}
+
 	// file exists, check hash
-	if f, err := os.OpenFile(localfilename, os.O_RDONLY, 0); err == nil {
+	if f, err := os.Open(localfilename); err == nil {
 		defer f.Close()
 		digest, err := digest.FromReader(f)
 		if err != nil {
@@ -99,25 +130,17 @@ func prepareWritefile(filename string) (*os.File, error) {
 	return f, nil
 }
 
-func (c Client) PullBlob(ctx context.Context, repo string, into io.Writer, desc types.Descriptor, p *mpb.Progress) error {
+func (c Client) PullBlob(ctx context.Context, repo string, desc types.Descriptor, p *mpb.Progress) (io.ReadCloser, error) {
 	content, len, err := c.remote.GetBlob(ctx, repo, desc.Digest)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer content.Close()
-
-	rc := io.NopCloser(io.Reader(content))
-	defer rc.Close()
 
 	if p != nil {
 		bar := progress.NewProgressBar(p, desc, "done")
 		defer bar.Close()
-		rc = bar.WrapReadCloser(len, rc, true)
+		content = bar.WrapReadCloser(len, content, true)
 	}
 
-	if _, err := io.Copy(into, rc); err != nil {
-		return err
-	}
-
-	return nil
+	return content, nil
 }

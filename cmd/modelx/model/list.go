@@ -5,10 +5,13 @@ import (
 	"errors"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/spf13/cobra"
 	"kubegems.io/modelx/cmd/modelx/repo"
+	"kubegems.io/modelx/pkg/client"
+	"kubegems.io/modelx/pkg/client/units"
 	"kubegems.io/modelx/pkg/types"
 	"kubegems.io/modelx/pkg/version"
 )
@@ -92,11 +95,32 @@ func List(ctx context.Context, ref string, search string) (*ShowList, error) {
 			return nil, err
 		}
 		show := &ShowList{
-			Header: []any{"File", "Size", "Digest", "Modified"},
+			Header: []any{"File", "Type", "Size", "Digest", "Modified"},
+		}
+		getType := func(mt string) string {
+			switch mt {
+			case client.MediaTypeModelDirectoryTarGz:
+				return "directory"
+			case client.MediaTypeModelFile:
+				return "file"
+			case client.MediaTypeModelConfigYaml:
+				return "config"
+			default:
+				return mt
+			}
+		}
+		formattime := func(tm time.Time) string {
+			return tm.Format(time.RFC3339)
 		}
 		items := append([]types.Descriptor{manifest.Config}, manifest.Blobs...)
 		for _, item := range items {
-			show.Items = append(show.Items, []any{item.Name, item.Size, item.Digest, item.Modified})
+			show.Items = append(show.Items, []any{
+				item.Name,
+				getType(item.MediaType),
+				units.HumanSize(float64(item.Size)),
+				item.Digest.Encoded()[:16],
+				formattime(item.Modified),
+			})
 		}
 		return show, nil
 	case repo != "" && version == "":
@@ -106,11 +130,11 @@ func List(ctx context.Context, ref string, search string) (*ShowList, error) {
 			return nil, err
 		}
 		show := &ShowList{
-			Header: []any{"Version", "URL", "Description"},
+			Header: []any{"Version", "URL"},
 		}
 		for _, item := range index.Manifests {
 			ref := Reference{Registry: reference.Registry, Repository: repo, Version: item.Name}
-			show.Items = append(show.Items, []any{item.Name, ref.String(), item.Annotations[AnnotationDescription]})
+			show.Items = append(show.Items, []any{item.Name, ref.String()})
 		}
 		return show, nil
 	default:

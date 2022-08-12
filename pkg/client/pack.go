@@ -2,49 +2,168 @@ package client
 
 import (
 	"context"
-	"io/fs"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 
-	"golang.org/x/exp/slices"
+	"github.com/mholt/archiver/v4"
+	"github.com/opencontainers/go-digest"
+	"golang.org/x/sync/errgroup"
 	"kubegems.io/modelx/pkg/types"
 )
 
-type Package struct {
-	types.Manifest
-	BaseDir string
+type DescriptorWithContent struct {
+	types.Descriptor
+	Content GetBodyFunc
 }
 
-func PackManifest(ctx context.Context, dir string, configfile string, annotations map[string]string) (types.Manifest, error) {
-	manifest := types.Manifest{
-		Blobs:       []types.Descriptor{},
-		Annotations: annotations,
+func ParseDir(ctx context.Context, dir string) (map[string]DescriptorWithContent, error) {
+	files := sync.Map{}
+
+	ds, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
 	}
-	fsys := os.DirFS(dir)
-	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+
+	wg := errgroup.Group{}
+	wg.SetLimit(PushConcurrency)
+	for _, d := range ds {
+		d := d
+		wg.Go(func() error {
+			if strings.HasPrefix(d.Name(), ".") {
+				return nil
+			}
+			filename := filepath.Join(dir, d.Name())
+			fi, err := d.Info()
+			if err != nil {
+				return err
+			}
+
+			if d.IsDir() {
+				tgzfile := filepath.Join(dir, ".modelx", d.Name()+".tar.gz")
+				digest, err := TGZ(ctx, filename, tgzfile)
+				if err != nil {
+					return err
+				}
+				tgzfi, err := os.Stat(tgzfile)
+				if err != nil {
+					return err
+				}
+				files.Store(d.Name(), DescriptorWithContent{
+					Descriptor: types.Descriptor{
+						Name:      d.Name(),
+						MediaType: MediaTypeModelDirectoryTarGz,
+						Digest:    digest,
+						Size:      tgzfi.Size(),
+						Modified:  fi.ModTime(),
+					},
+					Content: func() (io.ReadCloser, error) {
+						return os.Open(tgzfile)
+					},
+				})
+				return nil
+			}
+
+			getReader := func() (io.ReadCloser, error) {
+				return os.Open(filename)
+			}
+
+			f, err := getReader()
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+
+			desc, err := digest.FromReader(f)
+			if err != nil {
+				return err
+			}
+
+			files.Store(d.Name(), DescriptorWithContent{
+				Descriptor: types.Descriptor{
+					Name:      d.Name(),
+					MediaType: MediaTypeModelFile,
+					Digest:    desc,
+					Size:      fi.Size(),
+					Modified:  fi.ModTime(),
+				},
+				Content: getReader,
+			})
+			return nil
+		})
+	}
+	if err := wg.Wait(); err != nil {
+		return nil, err
+	}
+
+	bodymap := map[string]DescriptorWithContent{}
+	files.Range(func(key, value any) bool {
+		bodymap[key.(string)] = value.(DescriptorWithContent)
+		return true
+	})
+	return bodymap, nil
+}
+
+var tgz = archiver.CompressedArchive{
+	Archival:    archiver.Tar{},
+	Compression: archiver.Gz{},
+}
+
+func TGZ(ctx context.Context, dir string, intofile string) (digest.Digest, error) {
+	files, err := archiver.FilesFromDisk(
+		&archiver.FromDiskOptions{ClearAttributes: true},
+		map[string]string{dir + string(os.PathSeparator): ""},
+	)
+	if err != nil {
+		return "", err
+	}
+
+	writers := []io.Writer{}
+	if intofile != "" {
+		if err := os.MkdirAll(filepath.Dir(intofile), 0o755); err != nil {
+			return "", err
+		}
+		f, err := os.Create(intofile)
+		if err != nil {
+			return "", err
+		}
+		defer f.Close()
+
+		writers = append(writers, f)
+	}
+	d := digest.Canonical.Digester()
+	writers = append(writers, d.Hash())
+
+	if err := tgz.Archive(ctx, io.MultiWriter(writers...), files); err != nil {
+		return "", err
+	}
+	return d.Digest(), nil
+}
+
+func UnTGZ(ctx context.Context, dir string, readercloser io.ReadCloser) error {
+	return tgz.Extract(ctx, readercloser, nil, func(ctx context.Context, f archiver.File) error {
+		nameinlocal := filepath.Join(dir, f.NameInArchive)
+		if f.IsDir() {
+			return os.MkdirAll(nameinlocal, f.Mode())
+		}
+		srcfile, err := f.Open()
 		if err != nil {
 			return err
 		}
-		if strings.HasPrefix(path, ".") {
-			return nil
+		defer srcfile.Close()
+
+		intofile, err := os.OpenFile(nameinlocal, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.Mode())
+		if err != nil {
+			return err
 		}
-		if d.IsDir() {
-			if strings.HasPrefix(path, ".") {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		desc := types.Descriptor{Name: path}
-		if path == configfile {
-			manifest.Config = desc
-		} else {
-			manifest.Blobs = append(manifest.Blobs, desc)
+		defer intofile.Close()
+
+		_, err = io.Copy(intofile, srcfile)
+		if err != nil {
+			return err
 		}
 		return nil
 	})
-	if err != nil {
-		return types.Manifest{}, err
-	}
-	slices.SortFunc(manifest.Blobs, types.SortDescriptorName)
-	return manifest, nil
 }

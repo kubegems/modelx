@@ -7,14 +7,7 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-const (
-	MediaTypeModelIndexJson    = "application/vnd.modelx.model.index.v1.json"
-	MediaTypeModelManifestYaml = "application/vnd.modelx.model.manifest.v1+yaml"
-	MediaTypeModelConfigYaml   = "application/vnd.modelx.model.config.v1+yaml"
-	MediaTypeModelFile         = "application/vnd.modelx.model.file.v1"
 
-	RegistryIndexFileName = "index.json"
-)
 
 type Descriptor struct {
 	Name        string            `json:"name"`

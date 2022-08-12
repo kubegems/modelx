@@ -61,6 +61,7 @@ OS:=$(shell go env GOOS)
 ARCH:=$(shell go env GOARCH)
 build: ## Build binaries.
 	$(call build,${OS},${ARCH})
+	@cp ${BIN_DIR}/modelx-${OS}-${ARCH} ${BIN_DIR}/modelx
 
 build-all:
 	$(call build,linux,amd64)

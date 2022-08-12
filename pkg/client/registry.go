@@ -11,10 +11,12 @@ import (
 	"github.com/opencontainers/go-digest"
 	"kubegems.io/modelx/pkg/errors"
 	"kubegems.io/modelx/pkg/types"
+	"kubegems.io/modelx/pkg/version"
 )
 
+var UserAgent = "modelx/" + version.Get().GitVersion
+
 type RegistryClient struct {
-	Client        *http.Client
 	Registry      string
 	Authorization string
 }
@@ -157,12 +159,13 @@ func (t *RegistryClient) request(ctx context.Context, method, url string, header
 		return nil, err
 	}
 	req.Header.Set("Authorization", t.Authorization)
+	req.Header.Set("User-Agent", UserAgent)
 
 	for _, f := range applyreqfuncs {
 		f(req)
 	}
 
-	resp, err := t.Client.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

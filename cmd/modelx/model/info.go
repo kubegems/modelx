@@ -1,10 +1,10 @@
 package model
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 
@@ -71,9 +71,10 @@ func GetConfig(ctx context.Context, ref string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	content := bytes.NewBuffer(nil)
-	if err := cli.PullBlob(ctx, reference.Repository, content, manfiest.Config, nil); err != nil {
+	if content, err := cli.PullBlob(ctx, reference.Repository, manfiest.Config, nil); err != nil {
 		return nil, err
+	} else {
+		defer content.Close()
+		return io.ReadAll(content)
 	}
-	return content.Bytes(), nil
 }

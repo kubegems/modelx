@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"net/http"
 
 	"kubegems.io/modelx/pkg/types"
 )
@@ -13,7 +12,7 @@ type Client struct {
 
 func NewClient(registry string, auth string) *Client {
 	return &Client{
-		remote: RegistryClient{Client: &http.Client{}, Registry: registry, Authorization: auth},
+		remote: RegistryClient{Registry: registry, Authorization: auth},
 	}
 }
 

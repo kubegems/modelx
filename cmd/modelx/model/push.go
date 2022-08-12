@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 	"kubegems.io/modelx/cmd/modelx/repo"
-	"kubegems.io/modelx/pkg/client"
 )
 
 func NewPushCmd() *cobra.Command {
@@ -66,18 +65,6 @@ func PushModel(ctx context.Context, ref string, dir string) error {
 	if err := yaml.Unmarshal(configcontent, &config); err != nil {
 		return fmt.Errorf("parse model config:%s %w", ModelConfigFileName, err)
 	}
-
-	annotations := map[string]string{}
-	for k, v := range config.Annotations {
-		annotations[k] = v
-	}
-	annotations[AnnotationDescription] = config.Description
-
-	// manifest
-	manifest, err := client.PackManifest(ctx, dir, ModelConfigFileName, annotations)
-	if err != nil {
-		return err
-	}
 	fmt.Printf("Pushing to %s \n", reference.String())
-	return reference.Client().Push(ctx, reference.Repository, reference.Version, manifest, dir)
+	return reference.Client().Push(ctx, reference.Repository, reference.Version, ModelConfigFileName, dir)
 }

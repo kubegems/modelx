@@ -58,6 +58,7 @@ func ParseDir(ctx context.Context, dir string) (map[string]DescriptorWithContent
 						Digest:    digest,
 						Size:      tgzfi.Size(),
 						Modified:  fi.ModTime(),
+						Mode:      fi.Mode(),
 					},
 					Content: func() (io.ReadCloser, error) {
 						return os.Open(tgzfile)
@@ -88,6 +89,7 @@ func ParseDir(ctx context.Context, dir string) (map[string]DescriptorWithContent
 					Digest:    desc,
 					Size:      fi.Size(),
 					Modified:  fi.ModTime(),
+					Mode:      fi.Mode(),
 				},
 				Content: getReader,
 			})
@@ -142,9 +144,22 @@ func TGZ(ctx context.Context, dir string, intofile string) (digest.Digest, error
 	return d.Digest(), nil
 }
 
-func UnTGZ(ctx context.Context, dir string, readercloser io.ReadCloser) error {
+func UnTGZFile(ctx context.Context, intodir string, file string) error {
+	f, err := os.Open(file)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if err := UnTGZ(ctx, intodir, f); err != nil {
+		return err
+	}
+	return nil
+}
+
+func UnTGZ(ctx context.Context, intodir string, readercloser io.ReadCloser) error {
 	return tgz.Extract(ctx, readercloser, nil, func(ctx context.Context, f archiver.File) error {
-		nameinlocal := filepath.Join(dir, f.NameInArchive)
+		nameinlocal := filepath.Join(intodir, f.NameInArchive)
 		if f.IsDir() {
 			return os.MkdirAll(nameinlocal, f.Mode())
 		}

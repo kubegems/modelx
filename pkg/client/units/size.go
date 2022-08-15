@@ -39,7 +39,7 @@ func getSizeAndUnit(size float64, base float64, _map []string) (float64, string)
 }
 
 func HumanSize(size float64) string {
-	return HumanSizeWithPrecision(size, 4)
+	return HumanSizeWithPrecision(size, 3)
 }
 
 func HumanSizeWithPrecision(size float64, precision int) string {

@@ -15,7 +15,6 @@ require (
 	github.com/jedib0t/go-pretty/v6 v6.3.5
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/spf13/cobra v1.5.0
-	github.com/vbauerster/mpb/v7 v7.4.2
 	golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
 	gopkg.in/yaml.v2 v2.4.0
@@ -24,8 +23,6 @@ require (
 )
 
 require (
-	github.com/VividCortex/ewma v1.2.0 // indirect
-	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
 	github.com/andybalholm/brotli v1.0.4 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.4.3 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.12.8 // indirect

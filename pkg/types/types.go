@@ -1,19 +1,23 @@
 package types
 
 import (
+	"os"
 	"strings"
 	"time"
 
 	"github.com/opencontainers/go-digest"
 )
 
-
+const (
+	AnnotationFileMode = "filemode"
+)
 
 type Descriptor struct {
 	Name        string            `json:"name"`
 	MediaType   string            `json:"mediaType,omitempty"`
 	Digest      digest.Digest     `json:"digest,omitempty"`
 	Size        int64             `json:"size,omitempty"`
+	Mode        os.FileMode       `json:"mode,omitempty"`
 	URLs        []string          `json:"urls,omitempty"`
 	Modified    time.Time         `json:"modified,omitempty"`
 	Annotations map[string]string `json:"annotations,omitempty"`

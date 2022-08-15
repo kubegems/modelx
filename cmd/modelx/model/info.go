@@ -71,7 +71,7 @@ func GetConfig(ctx context.Context, ref string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if content, err := cli.PullBlob(ctx, reference.Repository, manfiest.Config, nil); err != nil {
+	if content, _, err := cli.Remote.GetBlob(ctx, reference.Repository, manfiest.Config.Digest); err != nil {
 		return nil, err
 	} else {
 		defer content.Close()

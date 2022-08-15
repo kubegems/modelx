@@ -3,11 +3,14 @@ package model
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 
 	"kubegems.io/modelx/cmd/modelx/repo"
 	"kubegems.io/modelx/pkg/client"
 )
+
+const ModelxAuthEnv = "MODELX_AUTH"
 
 type Reference struct {
 	Registry      string
@@ -28,7 +31,7 @@ func (r Reference) Client() *client.Client {
 }
 
 func ParseReference(raw string) (Reference, error) {
-	auth := ""
+	auth := os.Getenv(ModelxAuthEnv)
 	if !strings.Contains(raw, "://") {
 		splits := strings.SplitN(raw, ":", 2)
 		details, err := repo.DefaultRepoManager.Get(splits[0])

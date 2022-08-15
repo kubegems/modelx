@@ -19,6 +19,7 @@ ifeq (${IMAGE_TAG},main)
 endif
 # Image URL to use all building/pushing image targets
 IMG ?=  ${IMAGE_REGISTRY}/kubegems/modelx:$(IMAGE_TAG)
+DLIMG ?=  ${IMAGE_REGISTRY}/kubegems/modelxdl:$(IMAGE_TAG)
 
 GOPACKAGE=$(shell go list -m)
 ldflags+=-w -s
@@ -54,6 +55,7 @@ define build
 	@echo "Building ${1}/${2}"
 	@CGO_ENABLED=0 GOOS=${1} GOARCH=$(2) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/modelx-$(1)-$(2) ${GOPACKAGE}/cmd/modelx
 	@CGO_ENABLED=0 GOOS=${1} GOARCH=$(2) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/modelxd-$(1)-$(2) ${GOPACKAGE}/cmd/modelxd
+	@CGO_ENABLED=0 GOOS=${1} GOARCH=$(2) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/modelxdl-$(1)-$(2) ${GOPACKAGE}/cmd/modelxdl
 endef
 
 ##@ Build
@@ -73,15 +75,19 @@ build-all:
 image: ## Build container image.
 ifneq (, $(shell which docker))
 	docker build -t ${IMG} .
+	docker build -t ${DLIMG} .
 else
 	buildah bud -t ${IMG} .
+	buildah bud -t ${DLIMG} .
 endif
 
 push: ## Push docker image with the manager.
 ifneq (, $(shell which docker))
 	docker push ${IMG}
+	docker push ${DLIMG}
 else
 	buildah push ${IMG}
+	buildah push ${DLIMG}
 endif
 
 clean:

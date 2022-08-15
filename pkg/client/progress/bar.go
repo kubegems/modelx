@@ -107,16 +107,15 @@ func (r *Bar) Notify() {
 
 func (r *barReader) Read(p []byte) (int, error) {
 	n, err := r.rc.Read(p)
-	if err != nil {
-		return n, err
-	}
+
 	r.b.Completed += int64(n)
 	r.b.mp.haschange = true
 	if r.b.Completed >= r.b.Total {
 		r.b.Status = r.onComplete
 		r.b.Done = true
 	}
-	return n, nil
+
+	return n, err
 }
 
 func (r *barReader) Close() error {

@@ -65,6 +65,7 @@ func InitModelx(ctx context.Context, path string, force bool) error {
 		Mantainers: []string{
 			"maintainer",
 		},
+		ModelFiles: []string{},
 	}
 	configcontent, err := yaml.Marshal(config)
 	if err != nil {

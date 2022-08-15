@@ -31,14 +31,17 @@ func (c Client) Pull(ctx context.Context, repo string, version string, into stri
 	if err != nil {
 		return err
 	}
+	return c.PullBlobs(ctx, repo, into, append(manifest.Blobs, manifest.Config), false)
+}
 
+func (c Client) PullBlobs(ctx context.Context, repo string, basedir string, blobs []types.Descriptor, usecache bool) error {
 	mb := progress.NewMuiltiBar(os.Stdout, 40)
 	go mb.Run(ctx)
 
-	for _, blob := range append(manifest.Blobs, manifest.Config) {
+	for _, blob := range blobs {
 		blob := blob
 		mb.Go(blob.Name, "pending", func(b *progress.Bar) error {
-			return c.PullBlob(ctx, repo, blob, into, b)
+			return c.PullBlob(ctx, repo, blob, basedir, b, usecache)
 		})
 	}
 	return mb.Wait()
@@ -108,10 +111,10 @@ func writeFile(filename string, src io.ReadCloser, perm os.FileMode) error {
 	return err
 }
 
-func (c Client) PullBlob(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar) error {
+func (c Client) PullBlob(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar, usecache bool) error {
 	switch desc.MediaType {
 	case MediaTypeModelDirectoryTarGz:
-		return c.pullDirctory(ctx, repo, desc, basedir, bar)
+		return c.pullDirectory(ctx, repo, desc, basedir, bar, usecache)
 	case MediaTypeModelFile:
 		return c.pullFile(ctx, repo, desc, basedir, bar)
 	case MediaTypeModelConfigYaml:
@@ -152,7 +155,7 @@ func (c Client) pullFile(ctx context.Context, repo string, desc types.Descriptor
 	return writeFile(filename, content, desc.Mode.Perm())
 }
 
-func (c Client) pullDirctory(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar) error {
+func (c Client) pullDirectory(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar, useCache bool) error {
 	// check hash
 	bar.SetStatus(desc.Name, "checking")
 	digest, err := TGZ(ctx, filepath.Join(basedir, desc.Name), "")
@@ -165,27 +168,27 @@ func (c Client) pullDirctory(ctx context.Context, repo string, desc types.Descri
 	}
 
 	// pull to cache
-	cache := filepath.Join(basedir, ".modelx", desc.Name+".tar.gz")
 	content, contentlen, err := c.Remote.GetBlob(ctx, repo, desc.Digest)
 	if err != nil {
 		return err
 	}
+	src := bar.WrapReader(content, desc.Digest.Hex()[:8], contentlen, "downloading", "done", "failed")
+	if useCache {
+		cache := filepath.Join(basedir, ".modelx", desc.Name+".tar.gz")
+		if err := writeFile(cache, content, desc.Mode.Perm()); err != nil {
+			return err
+		}
+		f, err := os.Open(cache)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
 
-	content = bar.WrapReader(content, desc.Digest.Hex()[:8], contentlen, "downloading", "done", "failed")
-	if err := writeFile(cache, content, desc.Mode.Perm()); err != nil {
-		return err
+		fi, err := os.Stat(cache)
+		if err != nil {
+			return err
+		}
+		src = bar.WrapReader(src, desc.Digest.Hex()[:8], fi.Size(), "extracting", "done", "failed")
 	}
-	// untgz to dir
-	f, err := os.Open(cache)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	fi, err := os.Stat(cache)
-	if err != nil {
-		return err
-	}
-	rc := bar.WrapReader(f, desc.Digest.Hex()[:8], fi.Size(), "extracting", "done", "failed")
-	return UnTGZ(ctx, filepath.Join(basedir, desc.Name), rc)
+	return UnTGZ(ctx, filepath.Join(basedir, desc.Name), src)
 }

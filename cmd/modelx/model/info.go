@@ -24,6 +24,7 @@ type ModelConfig struct {
 	Tags        []string          `json:"tags"`
 	Mantainers  []string          `json:"maintainers"`
 	Annotations map[string]string `json:"annotations,omitempty"`
+	ModelFiles  []string          `json:"modelFiles"`
 	Config      any               `json:"config"`
 }
 

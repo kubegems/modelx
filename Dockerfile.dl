@@ -1,0 +1,5 @@
+FROM alpine
+ENV OS=linux ARCH=amd64
+COPY bin/modelxdl-linux-amd64 /app/
+WORKDIR /app
+ENTRYPOINT ["/app/modelxdl-linux-amd64"]

@@ -37,7 +37,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: bin/*
+          files: bin/modelx-*
 
   image:
     runs-on: ubuntu-latest
@@ -72,10 +72,25 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
       # https://github.com/docker/build-push-action
       - name: Build and push Docker image
-        id: build-and-push
         uses: docker/build-push-action@ac9327eae2b366085ac7f6a2d02df8aa8ead720a
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      #  https://github.com/docker/metadata-action
+      - name: Extract ModelXDL Docker metadata
+        id: dlmeta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+      # https://github.com/docker/build-push-action
+      - name: Build and push ModelXDL Docker image
+        uses: docker/build-push-action@ac9327eae2b366085ac7f6a2d02df8aa8ead720a
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.dlmeta.outputs.tags }}
+          labels: ${{ steps.dlmeta.outputs.labels }}
+          file: Dockerfile.dl

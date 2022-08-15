@@ -31,6 +31,7 @@ func NewDLCmd() *cobra.Command {
 		Version: version.Get().String(),
 		Example: `
 		modelxdl modelx://127.0.0.1:8080/library/model@v1 /mnt/model
+		modelxdl modelx://127.0.0.1:8080/library/model@v1?token=<token> /mnt/model
 		`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 2 {

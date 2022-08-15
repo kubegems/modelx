@@ -58,6 +58,9 @@ func ParseReference(raw string) (Reference, error) {
 	if u.Host == "" {
 		return Reference{}, fmt.Errorf("invalid reference: missing host")
 	}
+	if token := u.Query().Get("token"); token != "" {
+		auth = "Bearer " + token
+	}
 	repository, version := "", ""
 	splits := strings.SplitN(u.Path, "@", 2)
 	if len(splits) != 2 || splits[1] == "" {

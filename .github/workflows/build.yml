@@ -84,7 +84,7 @@ jobs:
         id: dlmeta
         uses: docker/metadata-action@v4
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-dl
       # https://github.com/docker/build-push-action
       - name: Build and push ModelXDL Docker image
         uses: docker/build-push-action@ac9327eae2b366085ac7f6a2d02df8aa8ead720a

@@ -78,18 +78,27 @@ func Run(ctx context.Context, uri string, dest string) error {
 
 	// filter modelfiles
 	pullblobs := []types.Descriptor{}
-	files := []string{}
-	for _, modelfile := range config.ModelFiles {
-		// case:  a/models/b.bin
-		// 	use:  a
-		firstelem := filepath.SplitList(modelfile)[0]
-		for _, manifestdesc := range manifest.Blobs {
-			if manifestdesc.Name == firstelem {
-				pullblobs = append(pullblobs, manifestdesc)
-				files = append(files, firstelem)
+
+	if len(config.ModelFiles) == 0 {
+		pullblobs = append(pullblobs, manifest.Config)
+		pullblobs = append(pullblobs, manifest.Blobs...)
+	} else {
+		for _, modelfile := range config.ModelFiles {
+			// case:  a/models/b.bin
+			// 	use:  a
+			firstelem := filepath.SplitList(modelfile)[0]
+			for _, manifestdesc := range manifest.Blobs {
+				if manifestdesc.Name == firstelem {
+					pullblobs = append(pullblobs, manifestdesc)
+				}
 			}
 		}
 	}
-	fmt.Printf("Pulling files %v\n", files)
+
+	files := []string{}
+	for _, blob := range pullblobs {
+		files = append(files, blob.Name)
+	}
+	fmt.Printf("Pulling files %v\n into %s", files, dest)
 	return cli.PullBlobs(ctx, ref.Repository, dest, pullblobs, false)
 }

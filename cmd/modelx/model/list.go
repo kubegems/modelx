@@ -80,12 +80,11 @@ func List(ctx context.Context, ref string, search string) (*ShowList, error) {
 			return nil, err
 		}
 		show := &ShowList{
-			Header: []any{"Name", "URL", "Description"},
+			Header: []any{"Name", "URL"},
 		}
-
 		for _, item := range index.Manifests {
 			ref := Reference{Registry: reference.Registry, Repository: item.Name}
-			show.Items = append(show.Items, []any{item.Name, ref.String(), item.Annotations[AnnotationDescription]})
+			show.Items = append(show.Items, []any{item.Name, ref.String()})
 		}
 		return show, nil
 	case repo != "" && version != "":
@@ -130,11 +129,11 @@ func List(ctx context.Context, ref string, search string) (*ShowList, error) {
 			return nil, err
 		}
 		show := &ShowList{
-			Header: []any{"Version", "URL"},
+			Header: []any{"Version", "URL", "Size"},
 		}
 		for _, item := range index.Manifests {
 			ref := Reference{Registry: reference.Registry, Repository: repo, Version: item.Name}
-			show.Items = append(show.Items, []any{item.Name, ref.String()})
+			show.Items = append(show.Items, []any{item.Name, ref.String(), units.HumanSize(float64(item.Size))})
 		}
 		return show, nil
 	default:

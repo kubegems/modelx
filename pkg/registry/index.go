@@ -99,6 +99,13 @@ func (m *RegistryStore) RefreshIndex(ctx context.Context, repository string) err
 				Name:        meta.Name,
 				Modified:    meta.LastModified,
 				Annotations: manifest.Annotations,
+				Size: func() int64 {
+					size := manifest.Config.Size
+					for _, blob := range manifest.Blobs {
+						size += blob.Size
+					}
+					return size
+				}(),
 			}
 			manifests.Store(meta.Name, desc)
 			return nil

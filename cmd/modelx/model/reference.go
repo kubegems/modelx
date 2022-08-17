@@ -71,6 +71,11 @@ func ParseReference(raw string) (Reference, error) {
 	if sp0 := splits[0]; sp0 != "" {
 		repository = sp0[1:]
 	}
+
+	if repository != "" && !strings.Contains(repository, "/") {
+		repository = "library/" + repository
+	}
+
 	ref := Reference{
 		Registry:      u.Scheme + "://" + u.Host,
 		Repository:    repository,

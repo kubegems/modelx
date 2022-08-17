@@ -81,7 +81,7 @@ func (r *Repomanager) Get(name string) (RepoDetails, error) {
 		return RepoDetails{}, err
 	}
 	for _, repo := range r.repos.Repos {
-		if repo.Name == name {
+		if repo.Name == name || repo.URL == name {
 			return repo, nil
 		}
 	}

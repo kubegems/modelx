@@ -18,7 +18,8 @@ func NewLoginCmd() *cobra.Command {
 		Use:   "login",
 		Short: "login to a modelx repository",
 		Example: `
-  modelx login <repo> [--token <token>]
+  modelx repo add local http://localhost:8080
+  modelx login repo local --token <token>
 		`,
 		SilenceUsage: true,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {

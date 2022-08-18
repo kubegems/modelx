@@ -11,6 +11,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      # Use docker.io for Docker Hub if empty
+      REGISTRY: docker.io
+      # github.repository as <account>/<repo>
+      IMAGE_NAME: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
@@ -26,12 +31,7 @@ jobs:
       # Build binary
       - name: Build
         run: make build-all
-      - name: Artifact
-        # https://github.com/actions/upload-artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: binaries
-          path: bin/*
+
       - name: Release
         # https://github.com/softprops/action-gh-release
         uses: softprops/action-gh-release@v1
@@ -39,23 +39,8 @@ jobs:
         with:
           files: bin/modelx-*
 
-  image:
-    runs-on: ubuntu-latest
-    needs:
-      - build
-    env:
-      # Use docker.io for Docker Hub if empty
-      REGISTRY: docker.io
-      # github.repository as <account>/<repo>
-      IMAGE_NAME: ${{ github.repository }}
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/download-artifact@v3
-        with:
-          name: binaries
-          path: bin
       # https://github.com/docker/setup-buildx-action
-      -  uses: docker/setup-buildx-action@v2
+      - uses: docker/setup-buildx-action@v2
       # https://github.com/docker/login-action
       - name: Log into registry ${{ env.REGISTRY }}
         if: github.event_name != 'pull_request'

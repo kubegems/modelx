@@ -21,6 +21,7 @@ const ModelConfigFileName = "modelx.yaml"
 type ModelConfig struct {
 	Description string            `json:"description"`
 	FrameWork   string            `json:"framework"`
+	Task        string            `json:"task"`
 	Tags        []string          `json:"tags"`
 	Mantainers  []string          `json:"maintainers"`
 	Annotations map[string]string `json:"annotations,omitempty"`

@@ -10,6 +10,8 @@ GIT_COMMIT?=$(shell git rev-parse HEAD 2>/dev/null)
 GIT_BRANCH?=$(shell git symbolic-ref --short HEAD 2>/dev/null)
 # semver version
 VERSION?=$(shell echo "${GIT_VERSION}" | sed -e 's/^v//')
+# semver version
+SEMVER_VERSION?=$(shell echo "${GIT_VERSION}" | sed -e 's/^v//')
 BIN_DIR = ${PWD}/bin
 
 IMAGE_REGISTRY?=docker.io
@@ -89,6 +91,15 @@ else
 	buildah push ${IMG}
 	buildah push ${DLIMG}
 endif
+
+helm-package:
+	helm package charts/modelx --version=${SEMVER_VERSION} --app-version=${SEMVER_VERSION} 
+
+HELM_REPO_USERNAME?=kubegems
+HELM_REPO_PASSWORD?=
+CHARTMUSEUM_ADDR?=https://${HELM_REPO_USERNAME}:${HELM_REPO_PASSWORD}@charts.kubegems.io/kubegems
+helm-push:
+	curl --data-binary "@modelx-${SEMVER_VERSION}.tgz" ${CHARTMUSEUM_ADDR}/api/charts
 
 clean:
 	- rm -rf ${BIN_DIR}

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: modelx
+version: 1.0.0 # set on ci
+appVersion: 1.0.0 # set on ci
+description: An model store to host marchine leaning models.

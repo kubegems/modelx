@@ -22,6 +22,11 @@ type Endpoint struct {
 func (s *Registry) route() http.Handler {
 	mux := mux.NewRouter()
 	mux = mux.StrictSlash(true)
+	// healthy
+	mux.Methods("GET").Path("/healthz").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+		w.WriteHeader(http.StatusOK)
+	})
 	// global index
 	mux.Methods("GET").Path("/").HandlerFunc(s.GetGlobalIndex)
 	// repository

@@ -1,0 +1,28 @@
+global:
+  imageRegistry: ""
+  imageRepository: ""
+image:
+  repository: kubegems/modelx
+  tag: latest
+deployment:
+  containerPorts:
+    http: 8080
+  resources:
+    limits:
+      cpu: 1
+      memory: 512Mi
+    requests:
+      cpu: 1
+      memory: 512Mi
+  oidcIssuer: ""
+service:
+  type: ClusterIP
+  ports:
+    http: 80
+storage:
+  s3:
+    accessKey: ""
+    url: ""
+    secretKey: ""
+    bucket: ""
+    direct: "true"

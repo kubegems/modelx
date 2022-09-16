@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "common.names.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "common.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels: {{- include "common.labels" . | nindent 6 }}
+  replicas: {{ default 1 .Values.replicaCount | int }}
+  template:
+    metadata:
+      labels: {{- include "common.labels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: modelx
+        image: {{ include "common.images.image" (dict "imageRoot" .Values.image "global" .Values.global) }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        args:
+        - --s3-url={{ .Values.storage.s3.url }}
+        - --s3-access-key={{ .Values.storage.s3.sccessKey }}
+        - --s3-secret-key={{ .Values.storage.s3.secretKey }}
+        - --s3-bucket={{ .Values.storage.s3.bucket }}
+        - --enable-redirect=true
+        - --oidc-issuer={{ .Values.deployment.oidcIssuer }}
+        - --listen=:{{ .Values.deployment.containerPorts.http | int }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.deployment.containerPorts.http | int }}
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+        resources:
+{{ toYaml .Values.deployment.resources | indent 10 }}

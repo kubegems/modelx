@@ -44,7 +44,7 @@ func InitModelx(ctx context.Context, path string, force bool) error {
 		}
 	} else {
 		if !force {
-			return fmt.Errorf("path %s already exists, remove it first", path)
+			return fmt.Errorf("path %s already exists", path)
 		}
 	}
 
@@ -72,8 +72,19 @@ func InitModelx(ctx context.Context, path string, force bool) error {
 		return fmt.Errorf("encode model %w", err)
 	}
 	configfile := filepath.Join(path, ModelConfigFileName)
-	if err := os.WriteFile(configfile, configcontent, 0o644); err != nil {
+	if err := os.WriteFile(configfile, configcontent, 0o755); err != nil {
 		return fmt.Errorf("write model config:%s %w", configfile, err)
+	}
+
+	// Init README.md
+	basefile := filepath.Base(path)
+	if basefile != "" {
+		readmefile := filepath.Join(path, ReadmeFileName)
+		_, err := os.Stat(readmefile)
+		if errors.Is(err, os.ErrNotExist) {
+			readmecontent := fmt.Sprintf("# %s\n\nAwesome model descrition.\n", basefile)
+			os.WriteFile(readmefile, []byte(readmecontent), 0o755)
+		}
 	}
 
 	fmt.Printf("Modelx model initialized in %s\n", path)

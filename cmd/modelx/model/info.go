@@ -16,7 +16,11 @@ const (
 	AnnotationDescription = "modelx.model.description"
 	AnnotationMintainers  = "modelx.model.maintainers"
 )
-const ModelConfigFileName = "modelx.yaml"
+
+const (
+	ModelConfigFileName = "modelx.yaml"
+	ReadmeFileName      = "README.md"
+)
 
 type ModelConfig struct {
 	Description string            `json:"description"`

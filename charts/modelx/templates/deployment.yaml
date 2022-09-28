@@ -18,7 +18,7 @@ spec:
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         args:
         - --s3-url={{ .Values.storage.s3.url }}
-        - --s3-access-key={{ .Values.storage.s3.sccessKey }}
+        - --s3-access-key={{ .Values.storage.s3.accessKey }}
         - --s3-secret-key={{ .Values.storage.s3.secretKey }}
         - --s3-bucket={{ .Values.storage.s3.bucket }}
         - --enable-redirect=true

@@ -2,6 +2,8 @@
 
 A model registry to host marchine leaning models.
 
+More infomation see: [How Modelx born](docs/how-modelx-born.md)
+
 ## Install modex cli
 
 Download binary from [latest release](https://github.com/kubegems/modelx/releases/latest) to your PATH.
@@ -35,6 +37,8 @@ $ modelx push kubegems:my-model@v1
 $ modelx list kubegems:mymodel
 ```
 
+For more infomations see [setup](docs/setup.md).
+
 ## About modelx.yaml
 
 `modelx.yaml` contains model's metadata, a full example is:
@@ -53,7 +57,3 @@ tags:
   - <other>
 task: ""
 ```
-
-## Setup Modelx Server
-
-See helm [charts](charts/modelx)

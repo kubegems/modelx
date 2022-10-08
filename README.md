@@ -150,10 +150,10 @@ First, add and login a model repository
 
 ```bash
 # Add model repository
-modelx repo add modelx http://<your_modelxd_url>
+$ modelx repo add modelx http://<your_modelxd_url>
 
 # Login repository, if you don't set oidc iusername, press "enter" to skip token authentication.
-modelx login modelx
+$ modelx login modelx
 Token:
 Login successful for modelx
 ```
@@ -161,19 +161,20 @@ Login successful for modelx
 Second, Init a model locally 
 
 ```bash
-modelx init class
+$ modelx init class
+
 Modelx model initialized in class
 
-tree class
+$ tree class
 class
 ├── modelx.yaml
 └── README.md
 
-cd class
+$ cd class
 # add model files
 
-echo "some script" > scripy.sh
-echo -n "some binary" > binary.dat
+$ echo "some script" > scripy.sh
+$ echo -n "some binary" > binary.dat
 ```
 
 Finally, push your models ! 💪🏻
@@ -181,7 +182,8 @@ Finally, push your models ! 💪🏻
 ```bash
 # add modelx registry
 
-modelx push modelx/library/class@v1
+$ modelx push modelx/library/class@v1
+
 Pushing to http://modelx.kubegems.io/library/class@v1
 17e682f0 [++++++++++++++++++++++++++++++++++++++++] done
 17e682f0 [++++++++++++++++++++++++++++++++++++++++] done
@@ -196,7 +198,7 @@ test.img [++++++++++++++++++++++++++++++++++++++++] done
 **list repository models**
 
 ```bash
-modelx list modelx
+$ modelx list modelx
 
 +---------+-------+------------------------------------------+
 | PROJECT | NAME  | URL                                      |
@@ -209,7 +211,7 @@ modelx list modelx
 **list model versions**
 
 ```bash
-modelx list test/class
+$ modelx list test/class
 
 +---------+--------------------------------------------+--------+
 | VERSION | URL                                        | SIZE   |
@@ -223,7 +225,7 @@ modelx list test/class
 **get model infomation**
 
 ```
-modelx info modelx/library/class@v1
+$ modelx info modelx/library/class@v1
 
 config:
   inputs: {}

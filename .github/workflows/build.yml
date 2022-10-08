@@ -37,7 +37,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: bin/modelx-*
+          files: bin/modelx*
 
       # https://github.com/docker/setup-buildx-action
       - uses: docker/setup-buildx-action@v2

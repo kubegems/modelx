@@ -161,15 +161,15 @@ Login successful for modelx
 Second, Init a model locally 
 
 ```bash
-modelx init my-model
-Modelx model initialized in my-model
+modelx init class
+Modelx model initialized in class
 
-tree my-model
-my-model
+tree class
+class
 ├── modelx.yaml
 └── README.md
 
-cd my-model
+cd class
 # add model files
 
 echo "some script" > scripy.sh
@@ -180,9 +180,8 @@ Finally, push your models ! 💪🏻
 
 ```bash
 # add modelx registry
-modelx push modelx/my-model@v1
 
-modelx push my-model/library/class@v3
+modelx push modelx/library/class@v1
 Pushing to http://modelx.kubegems.io/library/class@v1
 17e682f0 [++++++++++++++++++++++++++++++++++++++++] done
 17e682f0 [++++++++++++++++++++++++++++++++++++++++] done

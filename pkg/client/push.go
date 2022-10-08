@@ -21,6 +21,8 @@ const (
 	MediaTypeModelDirectoryTarGz = "application/vnd.modelx.model.directory.v1.tar+gz"
 )
 
+var EmptyFileDigiest = digest.Canonical.FromBytes(nil)
+
 const PushConcurrency = 5
 
 func (c Client) Push(ctx context.Context, repo, version string, configfile, basedir string) error {
@@ -101,6 +103,11 @@ func (c Client) Push(ctx context.Context, repo, version string, configfile, base
 }
 
 func (c Client) PushBlob(ctx context.Context, repo string, desc DescriptorWithContent, p *progress.Bar) error {
+	if desc.Digest == EmptyFileDigiest {
+		p.SetStatus(desc.Digest.Hex()[:8], "empty")
+		return nil
+	}
+
 	exist, err := c.Remote.HeadBlob(ctx, repo, desc.Digest)
 	if err != nil {
 		return err

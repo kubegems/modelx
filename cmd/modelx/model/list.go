@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/jedib0t/go-pretty/v6/table"
@@ -21,13 +22,25 @@ func NewListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "list manifests",
+		Long:  "list <repo>/[project]/[name]@[version] [--search=<keyword>]",
 		Example: `
-  modex list  https://registry.example.com --search "gpt"
-  modex list  https://registry.example.com/repo/model --search "v*"
-  modex list  https://registry.example.com/repo/model@v1
+	# List all projects of repo
+
+  		modex list  myrepo
+
+	# List all projects of repo filter by keyword
+
+		modex list  myrepo --search "gpt"
+
+	# List all versions
+
+		modex list  myrepo/project/demo [--serach=v1.*]
+
+	# List all files of cerrtain version
+
+  		modex list  myrepo/project/demo@v1.0
 		`,
-		Version:      version.Get().String(),
-		SilenceUsage: true,
+		Version: version.Get().String(),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			if len(args) == 0 {
 				return repo.CompleteRegistryRepositoryVersion(toComplete)
@@ -80,11 +93,16 @@ func List(ctx context.Context, ref string, search string) (*ShowList, error) {
 			return nil, err
 		}
 		show := &ShowList{
-			Header: []any{"Name", "URL"},
+			Header: []any{"Project", "Name", "URL"},
 		}
 		for _, item := range index.Manifests {
-			ref := Reference{Registry: reference.Registry, Repository: item.Name}
-			show.Items = append(show.Items, []any{item.Name, ref.String()})
+			splits := strings.SplitN(item.Name, "/", 2)
+			if len(splits) == 1 {
+				splits = append(splits, "")
+			}
+			show.Items = append(show.Items, []any{
+				splits[0], splits[1], Reference{Registry: reference.Registry, Repository: item.Name}.String(),
+			})
 		}
 		return show, nil
 	case repo != "" && version != "":

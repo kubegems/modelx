@@ -33,7 +33,7 @@ Access modelx server fom node port:
 export MODELX_URL="http://$(kubectl get node -o jsonpath='{.items[0].status.addresses[0].address}'):$(kubectl -n modelx get svc modelx -ojsonpath='{.spec.ports[0].nodePort}')"
 echo ${MODELX_URL}  # modelx service node port address
 curl ${MODELX_URL}
-{"schemaVersion":0,"manifests":null} # ok 
+# {"schemaVersion":0,"manifests":null} # OK, if see this output
 ```
 
 ## Install modelx client
@@ -72,7 +72,7 @@ $ modelx repo list
 | local | http://<ip>:<port>    |
 +-------+-----------------------+
 
-$ modelx push local:my-model@v1
+$ modelx push local/my-model@v1
 Pushing to http://<ip>:<port>/library/my-model@v1 
 0d9b4fc5 [++++++++++++++++++++++++++++++++++++++++] done
 67de5de8 [++++++++++++++++++++++++++++++++++++++++] done
@@ -82,17 +82,17 @@ List models exists in remote:
 
 ```sh
 $ modelx list local
-+------------------+-------------------------------------------+
-| NAME             | URL                                       |
-+------------------+-------------------------------------------+
-| library/my-model | http://10.12.32.11:31457/library/my-model |
-+------------------+-------------------------------------------+
++---------+----------+-------------------------------------------+
+| PROJECT | NAME     | URL                                       |
++---------+----------+-------------------------------------------+
+| library | my-model | http://<ip>:<port>/library/my-model       |
++---------+----------+-------------------------------------------+
 
 $ modelx list local:library/my-model
 +---------+----------------------------------------------+------+
 | VERSION | URL                                          | SIZE |
 +---------+----------------------------------------------+------+
-| v1      | http://10.12.32.11:31457/library/my-model@v1 | 182B |
+| v1      | http://<ip>:<port>/library/my-model@v1       | 182B |
 +---------+----------------------------------------------+------+
 
 $ modelx list local:library/my-model@v1
@@ -103,7 +103,7 @@ $ modelx list local:library/my-model@v1
 | data.bin    | file   | 8B   | 0d9b4fc5ed307b31 | 2022-09-28T15:38:51+08:00 |
 +-------------+--------+------+------------------+---------------------------+
 
-$ modelx info local:library/my-model@v1
+$ modelx info local/library/my-model@v1
 config:
   inputs: {}
   outputs: {}
@@ -121,8 +121,8 @@ task: ""
 Pull from remote:
 
 ```sh
-$ modelx pull local:library/my-model@v1 other-dir
-Pulling http://10.12.32.11:31457/library/my-model@v1 into other-dir 
+$ modelx pull local/library/my-model@v1 other-dir
+Pulling http://<ip>:<port>/library/my-model@v1 into other-dir 
 0d9b4fc5 [++++++++++++++++++++++++++++++++++++++++] done
 67de5de8 [++++++++++++++++++++++++++++++++++++++++] done
 

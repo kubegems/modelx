@@ -33,14 +33,14 @@ func (r Reference) Client() *client.Client {
 func ParseReference(raw string) (Reference, error) {
 	auth := os.Getenv(ModelxAuthEnv)
 	if !strings.Contains(raw, "://") {
-		splits := strings.SplitN(raw, ":", 2)
+		splits := strings.SplitN(raw, repo.SplitorRepo, 2)
 		details, err := repo.DefaultRepoManager.Get(splits[0])
 		if err != nil {
 			return Reference{}, err
 		}
-
-		auth = "Bearer " + details.Token
-
+		if auth == "" {
+			auth = "Bearer " + details.Token
+		}
 		if len(splits) == 2 {
 			raw = details.URL + "/" + splits[1]
 		} else {
@@ -62,7 +62,7 @@ func ParseReference(raw string) (Reference, error) {
 		auth = "Bearer " + token
 	}
 	repository, version := "", ""
-	splits := strings.SplitN(u.Path, "@", 2)
+	splits := strings.SplitN(u.Path, repo.SplitorVersion, 2)
 	if len(splits) != 2 || splits[1] == "" {
 		version = ""
 	} else {

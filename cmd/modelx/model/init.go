@@ -62,6 +62,19 @@ func InitModelx(ctx context.Context, path string, force bool) error {
 			"modelx",
 			"<other>",
 		},
+		Resources: map[string]any{
+			"cpu":    "4",
+			"memory": "16Gi",
+			"gpu": map[string]any{
+				"nvdia": map[string]any{
+					"nvdia/gpu": "1",
+				},
+				"gpu-manager": map[string]any{
+					"tencent.com/vcuda-core":   "50",
+					"tencent.com/vcuda-memory": "25",
+				},
+			},
+		},
 		Mantainers: []string{
 			"maintainer",
 		},

@@ -17,7 +17,18 @@ func NewPullCmd() *cobra.Command {
 		Use:   "pull",
 		Short: "pull a model from a repository",
 		Example: `
-  modex pull  https://registry.example.com/repo/name@version .
+	# Pull project/demo version latest to dirctory demo by default
+
+  		modex pull  https://myrepo/project/demo
+
+	# Pull project/demo to current dirctoty
+
+		modex pull  https://myrepo/project/demo@version .
+		
+	# Pull project/demo to dirctoty abc
+
+		modex pull  https://myrepo/project/demo@version abc
+
 		`,
 		SilenceUsage: true,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {

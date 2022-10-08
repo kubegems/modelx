@@ -12,33 +12,15 @@ import (
 	"kubegems.io/modelx/cmd/modelx/repo"
 )
 
-const (
-	AnnotationDescription = "modelx.model.description"
-	AnnotationMintainers  = "modelx.model.maintainers"
-)
-
-const (
-	ModelConfigFileName = "modelx.yaml"
-	ReadmeFileName      = "README.md"
-)
-
-type ModelConfig struct {
-	Description string            `json:"description"`
-	FrameWork   string            `json:"framework"`
-	Task        string            `json:"task"`
-	Tags        []string          `json:"tags"`
-	Mantainers  []string          `json:"maintainers"`
-	Annotations map[string]string `json:"annotations,omitempty"`
-	ModelFiles  []string          `json:"modelFiles"`
-	Config      any               `json:"config"`
-}
-
 func NewInfoCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "info",
-		Short: "get config of model",
+		Short: "show config of model",
 		Example: `
-  modex info  https://registry.example.com/repo/name@version
+	# Show modelx.yaml of a remote model.
+
+  		modex info  myrepo/project/demo@version
+
 		`,
 		SilenceUsage: true,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {

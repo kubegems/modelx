@@ -12,7 +12,8 @@ func NewRepoRemoveCmd() *cobra.Command {
 		Short: "remove a repository",
 		Long:  "Remove a repository",
 		Example: `
-		# Remove a repository
+	# Remove a repository
+
 		modelx repo remove my-repo`,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return CompleteRegistry(toComplete)

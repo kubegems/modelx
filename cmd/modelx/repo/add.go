@@ -13,7 +13,9 @@ func NewRepoAddCmd() *cobra.Command {
 		Long:  "Add a repository",
 		Example: `
 	# Add a repository
-	modelx repo add my-repo https://modelx.example.com
+
+		modelx repo add my-repo https://modelx.example.com
+
 		`,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			if len(args) == 1 {

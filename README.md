@@ -37,6 +37,8 @@ $ modelx push kubegems:my-model@v1
 $ modelx list kubegems:mymodel
 ```
 
+## Deploy modelx server
+
 For more infomations see [setup](docs/setup.md).
 
 ## About modelx.yaml

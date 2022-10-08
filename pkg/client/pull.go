@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -146,10 +147,18 @@ func (c Client) pullFile(ctx context.Context, repo string, desc types.Descriptor
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	// pull
-	content, contentlen, err := c.Remote.GetBlob(ctx, repo, desc.Digest)
-	if err != nil {
-		return err
+
+	var content io.ReadCloser
+	var contentlen int64
+	if desc.Digest == EmptyFileDigiest {
+		content, contentlen = io.NopCloser(bytes.NewReader(nil)), 0
+	} else {
+		// pull
+		ctt, cttl, err := c.Remote.GetBlob(ctx, repo, desc.Digest)
+		if err != nil {
+			return err
+		}
+		content, contentlen = ctt, cttl
 	}
 	content = bar.WrapReader(content, desc.Digest.Hex()[:8], contentlen, "downloading", "done", "failed")
 	return writeFile(filename, content, desc.Mode.Perm())

@@ -18,7 +18,18 @@ func NewPushCmd() *cobra.Command {
 		Use:   "push",
 		Short: "push a model to a modelx repository",
 		Example: `
-  modex push modelx/hello/gpt@v1 .
+	# Push current directory to repo myrepo
+
+		modex push myrepo/project/demo
+
+	# Push current directory to repo myrepo as v1
+			
+		modex push myrepo/project/demo@v1
+
+	# Push directory abc to repo myrepo
+			
+		modlex push myrepo/project/demo@v1 abc
+
 		`,
 		SilenceUsage: true,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {

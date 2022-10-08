@@ -8,14 +8,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	SplitorRepo    = "/"
+	SplitorVersion = "@"
+)
+
 func NewRepoListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "list local repositories",
 		Long:  "List repositories",
 		Example: `
-		# List repositories
+	# List repositories
+
 		modelx repo list
+
 		`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			details := DefaultRepoManager.List()
@@ -33,21 +40,21 @@ func NewRepoListCmd() *cobra.Command {
 }
 
 func CompleteRegistryRepositoryVersion(toComplete string) ([]string, cobra.ShellCompDirective) {
-	if i := strings.IndexByte(toComplete, ':'); i != -1 {
+	if i := strings.Index(toComplete, SplitorRepo); i != -1 {
 		registry, repositoryToComplete := toComplete[:i], toComplete[i+1:]
-		if i := strings.IndexRune(repositoryToComplete, '@'); i != -1 {
+		if i := strings.Index(repositoryToComplete, SplitorVersion); i != -1 {
 			repository, versionToComplete := repositoryToComplete[:i], repositoryToComplete[i+1:]
 			return CompleteVersion(registry, repository, versionToComplete)
 		}
 		completes, d := CompleteRepositories(registry, repositoryToComplete)
 		if repositoryToComplete != "" {
-			completes = append(completes, registry+":"+repositoryToComplete+"@")
+			completes = append(completes, registry+SplitorRepo+repositoryToComplete+SplitorVersion)
 		}
 		return completes, d
 	}
 	completes, d := CompleteRegistry(toComplete)
 	if toComplete != "" {
-		completes = append(completes, toComplete+":")
+		completes = append(completes, toComplete+SplitorRepo)
 	}
 	return completes, d
 }
@@ -77,7 +84,7 @@ func CompleteRepositories(registry string, repositoryToComplete string) ([]strin
 	}
 	registries := []string{}
 	for _, item := range index.Manifests {
-		registries = append(registries, registry+":"+item.Name)
+		registries = append(registries, registry+SplitorRepo+item.Name)
 	}
 	return registries, cobra.ShellCompDirectiveNoSpace
 }
@@ -93,7 +100,7 @@ func CompleteVersion(registry, repository, versionToComplete string) ([]string, 
 	}
 	versions := []string{}
 	for _, item := range index.Manifests {
-		versions = append(versions, registry+":"+repository+"@"+item.Name)
+		versions = append(versions, registry+SplitorRepo+repository+SplitorVersion+item.Name)
 	}
 	return versions, cobra.ShellCompDirectiveNoSpace
 }

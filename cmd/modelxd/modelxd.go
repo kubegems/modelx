@@ -35,9 +35,9 @@ func NewRegistryCmd() *cobra.Command {
 
 	flags := cmd.Flags()
 	flags.StringVar(&options.Listen, "listen", options.Listen, "listen address")
-	flags.StringVar(&options.TLS.CAFile, "ca-file", options.TLS.CAFile, "tls ca file")
-	flags.StringVar(&options.TLS.CertFile, "cert-file", options.TLS.CertFile, "tls cert file")
-	flags.StringVar(&options.TLS.KeyFile, "key-file", options.TLS.KeyFile, "tls key file")
+	flags.StringVar(&options.TLS.CAFile, "tls-ca", options.TLS.CAFile, "tls ca file")
+	flags.StringVar(&options.TLS.CertFile, "tls-cert", options.TLS.CertFile, "tls cert file")
+	flags.StringVar(&options.TLS.KeyFile, "tls-key", options.TLS.KeyFile, "tls key file")
 	flags.StringVar(&options.S3.Buket, "s3-bucket", options.S3.Buket, "s3 bucket")
 	flags.StringVar(&options.S3.URL, "s3-url", options.S3.URL, "s3 url")
 	flags.StringVar(&options.S3.AccessKey, "s3-access-key", options.S3.AccessKey, "s3 access key")

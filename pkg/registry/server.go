@@ -88,6 +88,7 @@ func NewRegistry(ctx context.Context, opt *Options) (*Registry, error) {
 }
 
 func NewOIDCAuthFilter(ctx context.Context, issuer string, next http.Handler) http.Handler {
+	ctx = oidc.InsecureIssuerURLContext(ctx, issuer)
 	provider, err := oidc.NewProvider(ctx, issuer)
 	if err != nil {
 		log.Fatal(err)

@@ -101,7 +101,12 @@ func NewOIDCAuthFilter(ctx context.Context, issuer string, next http.Handler) ht
 		headerAuthorzation := r.Header.Get("Authorization")
 		token := strings.TrimPrefix(headerAuthorzation, "Bearer ")
 		if token == "" {
-			token = r.URL.Query().Get("access_token")
+			queries := r.URL.Query()
+			for _, k := range []string{"token", "access_token"} {
+				if token = queries.Get(k); token != "" {
+					break
+				}
+			}
 		}
 		if len(token) == 0 {
 			ResponseError(w, errors.NewUnauthorizedError("missing access token"))

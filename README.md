@@ -45,11 +45,8 @@ Usage:
   modelxd [flags]
 
 Flags:
-      --ca-file string               tls ca file
-      --cert-file string             tls cert file
       --enable-redirect              enable blob storage redirect
   -h, --help                         help for modelxd
-      --key-file string              tls key file
       --listen string                listen address (default ":8080")
       --oidc-issuer string           oidc issuer
       --s3-access-key string         s3 access key
@@ -58,6 +55,9 @@ Flags:
       --s3-region string             s3 region
       --s3-secret-key string         s3 secret key
       --s3-url string                s3 url (default "https://s3.amazonaws.com")
+      --tls-ca string                tls ca file
+      --tls-cert string              tls cert file
+      --tls-key string               tls key file
   -v, --version                      version for modelxd
 ```
 
@@ -73,6 +73,19 @@ modelxd --listen=:8080 \
   --s3-bucket=<Bucket> \
   --enable-redirect=true
 ```
+
+**Using HTTPS**
+
+If both of the following options are provided, the server will listen and serve HTTPS:
+
+- --tls-cert=<crt> - path to tls certificate chain file
+- --tls-key=<key> - path to tls key file
+
+HTTPS with Client Certificate Authentication
+
+If the above HTTPS values are provided in addition to below, the server will listen and serve HTTPS and authenticate client requests against the CA certificate:
+
+- --tls-ca-cert=<cacert> - path to tls certificate file
 
 **Using OIDC with KubeGems**
 

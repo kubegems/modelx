@@ -61,7 +61,7 @@ func (m *RegistryStore) PutManifest(ctx context.Context, repository string, refe
 }
 
 func (m *RegistryStore) DeleteManifest(ctx context.Context, repository string, reference string) error {
-	if err := m.Storage.Remove(ctx, ManifestPath(repository, reference)); err != nil {
+	if err := m.Storage.Remove(ctx, ManifestPath(repository, reference), false); err != nil {
 		return errors.NewInternalError(err)
 	}
 	return nil

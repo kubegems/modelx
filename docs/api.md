@@ -1,4 +1,4 @@
-# modelx workflow
+# modelx API
 
 ## 基本概念
 
@@ -10,15 +10,16 @@
 
 ## endpoints
 
-| method | path                                 | description          |
-| ------ | ------------------------------------ | -------------------- |
-| GET    | /                                    | 获取全局索引         |
-| GET    | /{repository}/{name}/index           | 获取索引             |
-| GET    | /{repository}/{name}/manifests/{tag} | 获取特定版本描述文件 |
-| DELETE | /{repository}/{name}/manifests/{tag} | 删除特定版本描述文件 |
-| HEAD   | /{repository}/{name}/blobs/{digest}  | 判断数据文件是否存在 |
-| GET    | /{repository}/{name}/blobs/{digest}  | 获取特定版本数据文件 |
-| PUT    | /{repository}/{name}/blobs/{digest}  | 上传特定版本数据文件 |
+| method | path                                 | description              |
+| ------ | ------------------------------------ | ------------------------ |
+| GET    | /                                    | 获取全局索引             |
+| GET    | /{repository}/{name}/index           | 获取索引                 |
+| DELETE | /{repository}/{name}/index           | 删除索引以及所有版本数据 |
+| GET    | /{repository}/{name}/manifests/{tag} | 获取特定版本描述文件     |
+| DELETE | /{repository}/{name}/manifests/{tag} | 删除特定版本描述文件     |
+| HEAD   | /{repository}/{name}/blobs/{digest}  | 判断数据文件是否存在     |
+| GET    | /{repository}/{name}/blobs/{digest}  | 获取特定版本数据文件     |
+| PUT    | /{repository}/{name}/blobs/{digest}  | 上传特定版本数据文件     |
 
 ## 负载转移
 

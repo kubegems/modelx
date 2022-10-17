@@ -33,6 +33,7 @@ func (s *Registry) route() http.Handler {
 	repository := mux.PathPrefix("/{name:" + NameRegexp + "}").Subrouter()
 	// index
 	repository.Methods("GET").Path("/index").HandlerFunc(s.GetIndex)
+	repository.Methods("DELETE").Path("/index").HandlerFunc(s.DeleteIndex)
 	// repository/manifests
 	manifests := repository.PathPrefix("/manifests").Subrouter()
 	manifests.Methods("GET").Path("/{reference:" + ReferenceRegexp + "}").HandlerFunc(s.GetManifest)

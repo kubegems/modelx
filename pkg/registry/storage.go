@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go/transport/http"
 )
 
@@ -36,9 +37,9 @@ type StorageProvider interface {
 	PutLocation(ctx context.Context, path string) (string, error)
 	Get(ctx context.Context, path string) (StorageContent, error)
 	GetLocation(ctx context.Context, path string) (string, error)
-	Remove(ctx context.Context, path string) error
+	Remove(ctx context.Context, path string, recursive bool) error
 	Exists(ctx context.Context, path string) (bool, error)
-	List(ctx context.Context, path string, isPrefix bool) ([]StorageMeta, error)
+	List(ctx context.Context, path string, recursive bool) ([]StorageMeta, error)
 }
 
 func (s StorageContent) Close() error {
@@ -87,12 +88,43 @@ func (m *S3StorageProvider) PutLocation(ctx context.Context, path string) (strin
 	return out.URL, nil
 }
 
-func (m *S3StorageProvider) Remove(ctx context.Context, path string) error {
-	_, err := m.Client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(m.Bucket),
-		Key:    m.prefixedKey(path),
-	})
-	return err
+func (m *S3StorageProvider) Remove(ctx context.Context, path string, recursive bool) error {
+	if recursive {
+		prefix := m.prefixedKey(path)
+		if !strings.HasSuffix(*prefix, "/") {
+			*prefix += "/"
+		}
+		output, err := m.Client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: aws.String(m.Bucket),
+			Prefix: prefix,
+		})
+		if err != nil {
+			return err
+		}
+		if len(output.Contents) == 0 {
+			return nil
+		}
+		objectsids := make([]types.ObjectIdentifier, 0, len(output.Contents))
+		for _, object := range output.Contents {
+			objectsids = append(objectsids, types.ObjectIdentifier{Key: object.Key})
+		}
+
+		deleteOutput, err := m.Client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(m.Bucket),
+			Delete: &types.Delete{Objects: objectsids},
+		})
+		if err != nil {
+			return err
+		}
+		_ = deleteOutput
+		return nil
+	} else {
+		_, err := m.Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: aws.String(m.Bucket),
+			Key:    m.prefixedKey(path),
+		})
+		return err
+	}
 }
 
 func (m *S3StorageProvider) Get(ctx context.Context, path string) (StorageContent, error) {
@@ -137,7 +169,7 @@ func (m *S3StorageProvider) Exists(ctx context.Context, path string) (bool, erro
 	return true, nil
 }
 
-func (m *S3StorageProvider) List(ctx context.Context, path string, isPrefix bool) ([]StorageMeta, error) {
+func (m *S3StorageProvider) List(ctx context.Context, path string, recursive bool) ([]StorageMeta, error) {
 	prefix := *m.prefixedKey(path)
 	if !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
@@ -146,7 +178,7 @@ func (m *S3StorageProvider) List(ctx context.Context, path string, isPrefix bool
 		Bucket: aws.String(m.Bucket),
 		Prefix: aws.String(prefix),
 	}
-	if !isPrefix {
+	if !recursive {
 		listinput.Delimiter = aws.String("/")
 	}
 	var result []StorageMeta

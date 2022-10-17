@@ -57,6 +57,18 @@ func (s *Registry) GetIndex(w http.ResponseWriter, r *http.Request) {
 	ResponseOK(w, index)
 }
 
+func (s *Registry) DeleteIndex(w http.ResponseWriter, r *http.Request) {
+	name, _ := GetRepositoryReference(r)
+	if err := s.Manifest.RemoveIndex(r.Context(), name); err != nil {
+		if IsS3StorageNotFound(err) {
+			err = errors.NewIndexUnknownError(name)
+		}
+		ResponseError(w, err)
+		return
+	}
+	ResponseOK(w, "ok")
+}
+
 func (s *Registry) GetManifest(w http.ResponseWriter, r *http.Request) {
 	name, reference := GetRepositoryReference(r)
 	manifest, err := s.Manifest.GetManifest(r.Context(), name, reference)

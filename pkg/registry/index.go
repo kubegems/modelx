@@ -80,6 +80,17 @@ func (m *RegistryStore) PutIndex(ctx context.Context, repository string, index t
 	return nil
 }
 
+func (m *RegistryStore) RemoveIndex(ctx context.Context, repository string) error {
+	// remove all manifests and blobs
+	if err := m.Storage.Remove(ctx, repository, true); err != nil {
+		return errors.NewInternalError(err)
+	}
+	if err := m.RefreshIndex(ctx, repository); err != nil {
+		return errors.NewInternalError(err)
+	}
+	return nil
+}
+
 func (m *RegistryStore) RefreshIndex(ctx context.Context, repository string) error {
 	filemetas, err := m.Storage.List(ctx, ManifestPath(repository, ""), false)
 	if err != nil {
@@ -123,8 +134,10 @@ func (m *RegistryStore) RefreshIndex(ctx context.Context, repository string) err
 	})
 
 	// save the index
-	if err := m.PutIndex(ctx, repository, index); err != nil {
-		return errors.NewInternalError(err)
+	if len(index.Manifests) != 0 {
+		if err := m.PutIndex(ctx, repository, index); err != nil {
+			return errors.NewInternalError(err)
+		}
 	}
 	// refresh global index
 	if err := m.RefreshGlobalIndex(ctx); err != nil {

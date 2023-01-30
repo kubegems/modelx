@@ -47,5 +47,10 @@ func NewRegistryCmd() *cobra.Command {
 	flags.StringVar(&options.OIDC.Issuer, "oidc-issuer", options.OIDC.Issuer, "oidc issuer")
 	flags.BoolVar(&options.EnableRedirect, "enable-redirect", options.EnableRedirect, "enable blob storage redirect")
 
+	flags.StringVar(&options.Vault.Address, "vault-url", options.Vault.Address, "idoe vault service url")
+	flags.StringVar(&options.Vault.Username, "vault-username", options.Vault.Username, "idoe vault service account username")
+	flags.StringVar(&options.Vault.Mnemonic, "vault-mnemonic", options.Vault.Mnemonic, "idoe vault service account mnemonic")
+	flags.StringVar(&options.Vault.Project, "vault-project", options.Vault.Project, "idoe vault project address for modelx")
+	flags.StringVar(&options.Vault.Database, "vault-database", options.Vault.Database, "idoe vault local database for users mnemonic storage")
 	return cmd
 }

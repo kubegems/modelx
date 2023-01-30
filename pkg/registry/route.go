@@ -12,13 +12,6 @@ const (
 	DigestRegexp    = `[A-Za-z][A-Za-z0-9]*(?:[-_+.][A-Za-z][A-Za-z0-9]*)*[:][[:xdigit:]]{32,}`
 )
 
-type Endpoint struct {
-	IDs      []string
-	Name     string
-	Endpoint string
-	Handler  http.HandlerFunc
-}
-
 func (s *Registry) route() http.Handler {
 	mux := mux.NewRouter()
 	mux = mux.StrictSlash(true)

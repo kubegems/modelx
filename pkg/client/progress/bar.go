@@ -84,7 +84,7 @@ func (b *Bar) Increment(n int64) {
 	b.Notify()
 }
 
-func (b *Bar) WrapReader(rc io.ReadCloser, name string, total int64, onProcess, onComplete, onFailed string) io.ReadCloser {
+func (b *Bar) WrapReader(rc io.ReadSeekCloser, name string, total int64, onProcess, onComplete, onFailed string) io.ReadSeekCloser {
 	b.Total = total
 	b.Status = onProcess
 	b.Name = name
@@ -93,7 +93,7 @@ func (b *Bar) WrapReader(rc io.ReadCloser, name string, total int64, onProcess, 
 }
 
 type barReader struct {
-	rc         io.ReadCloser
+	rc         io.ReadSeekCloser
 	b          *Bar
 	onComplete string
 	onFailed   string
@@ -118,10 +118,67 @@ func (r *barReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+func (r *barReader) Seek(offset int64, whence int) (int64, error) {
+	return r.rc.Seek(offset, whence)
+}
+
 func (r *barReader) Close() error {
 	if r.b.Completed < r.b.Total {
 		r.b.Status = r.onFailed
 	}
 	r.b.Notify()
 	return r.rc.Close()
+}
+
+func (b *Bar) WrapWriter(w io.Writer, name string, total int64, onProcess, onComplete, onFailed string) io.Writer {
+	b.Name = name
+	b.Total = total
+	b.Status = onProcess
+	b.Notify()
+	return &bario{w: w, b: b, onComplete: onComplete, onFailed: onFailed}
+}
+
+type bario struct {
+	w          io.Writer
+	b          *Bar
+	onComplete string
+	onFailed   string
+}
+
+func (r *bario) Write(p []byte) (int, error) {
+	n, err := r.w.Write(p)
+	if err != nil {
+		r.b.mp.haschange = true
+		r.b.Done = true
+		r.b.Status = r.onFailed
+		return n, err
+	}
+	r.b.Completed += int64(n)
+	r.b.mp.haschange = true
+	if r.b.Completed >= r.b.Total {
+		r.b.Status = r.onComplete
+		r.b.Done = true
+	}
+	return n, nil
+}
+
+func (r *bario) WriteAt(p []byte, off int64) (int, error) {
+	wat, ok := r.w.(io.WriterAt)
+	if !ok {
+		return 0, io.ErrUnexpectedEOF
+	}
+	n, err := wat.WriteAt(p, off)
+	if err != nil {
+		r.b.mp.haschange = true
+		r.b.Done = true
+		r.b.Status = r.onFailed
+		return n, err
+	}
+	r.b.Completed += int64(n)
+	r.b.mp.haschange = true
+	if r.b.Completed >= r.b.Total {
+		r.b.Status = r.onComplete
+		r.b.Done = true
+	}
+	return n, nil
 }

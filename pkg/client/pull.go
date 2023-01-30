@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -9,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/opencontainers/go-digest"
+	"golang.org/x/sync/errgroup"
 	"kubegems.io/modelx/pkg/client/progress"
 	"kubegems.io/modelx/pkg/types"
 )
@@ -83,7 +83,17 @@ func checkLocalBlob(ctx context.Context, dir string, desc types.Descriptor) (boo
 	return false, nil
 }
 
-func writeFile(filename string, src io.ReadCloser, perm os.FileMode) error {
+func OpenWriteFile(filename string, perm os.FileMode) (*os.File, error) {
+	if perm == 0 {
+		perm = 0o644
+	}
+	if err := os.MkdirAll(filepath.Dir(filename), os.ModePerm); err != nil {
+		return nil, err
+	}
+	return os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm.Perm())
+}
+
+func WriteToFile(filename string, src io.Reader, perm os.FileMode) error {
 	var f *os.File
 	var err error
 
@@ -106,7 +116,10 @@ func writeFile(filename string, src io.ReadCloser, perm os.FileMode) error {
 	}
 
 	defer f.Close()
-	defer src.Close()
+
+	if closer, ok := src.(io.Closer); ok {
+		defer closer.Close()
+	}
 
 	_, err = io.Copy(f, src)
 	return err
@@ -148,20 +161,16 @@ func (c Client) pullFile(ctx context.Context, repo string, desc types.Descriptor
 		return err
 	}
 
-	var content io.ReadCloser
-	var contentlen int64
-	if desc.Digest == EmptyFileDigiest {
-		content, contentlen = io.NopCloser(bytes.NewReader(nil)), 0
-	} else {
-		// pull
-		ctt, cttl, err := c.Remote.GetBlob(ctx, repo, desc.Digest)
-		if err != nil {
-			return err
-		}
-		content, contentlen = ctt, cttl
+	f, err := OpenWriteFile(filename, desc.Mode.Perm())
+	if err != nil {
+		return err
 	}
-	content = bar.WrapReader(content, desc.Digest.Hex()[:8], contentlen, "downloading", "done", "failed")
-	return writeFile(filename, content, desc.Mode.Perm())
+	defer f.Close()
+	if desc.Digest == EmptyFileDigiest {
+		return nil
+	}
+	w := bar.WrapWriter(f, desc.Digest.Hex()[:8], desc.Size, "downloading", "done", "failed")
+	return c.Remote.GetBlobContent(ctx, repo, desc.Digest, w)
 }
 
 func (c Client) pullDirectory(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar, useCache bool) error {
@@ -177,27 +186,35 @@ func (c Client) pullDirectory(ctx context.Context, repo string, desc types.Descr
 	}
 
 	// pull to cache
-	content, contentlen, err := c.Remote.GetBlob(ctx, repo, desc.Digest)
-	if err != nil {
-		return err
-	}
-	src := bar.WrapReader(content, desc.Digest.Hex()[:8], contentlen, "downloading", "done", "failed")
-	if useCache {
-		cache := filepath.Join(basedir, ".modelx", desc.Name+".tar.gz")
-		if err := writeFile(cache, content, desc.Mode.Perm()); err != nil {
-			return err
-		}
-		f, err := os.Open(cache)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
+	piper, pipew := io.Pipe()
+	var src io.Reader = piper
 
-		fi, err := os.Stat(cache)
-		if err != nil {
-			return err
+	eg, ctx := errgroup.WithContext(ctx)
+	// download
+	eg.Go(func() error {
+		pipew2 := bar.WrapWriter(pipew, desc.Digest.Hex()[:8], desc.Size, "downloading", "done", "failed")
+		return c.Remote.GetBlobContent(ctx, repo, desc.Digest, pipew2)
+	})
+	// extract
+	eg.Go(func() error {
+		if useCache {
+			cache := filepath.Join(basedir, ".modelx", desc.Name+".tar.gz")
+			if err := WriteToFile(cache, src, desc.Mode.Perm()); err != nil {
+				return err
+			}
+			f, err := os.Open(cache)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+
+			fi, err := os.Stat(cache)
+			if err != nil {
+				return err
+			}
+			src = bar.WrapReader(f, desc.Digest.Hex()[:8], fi.Size(), "extracting", "done", "failed")
 		}
-		src = bar.WrapReader(src, desc.Digest.Hex()[:8], fi.Size(), "extracting", "done", "failed")
-	}
-	return UnTGZ(ctx, filepath.Join(basedir, desc.Name), src)
+		return UnTGZ(ctx, filepath.Join(basedir, desc.Name), src)
+	})
+	return eg.Wait()
 }

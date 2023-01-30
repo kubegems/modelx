@@ -16,7 +16,7 @@ import (
 
 type DescriptorWithContent struct {
 	types.Descriptor
-	Content GetBodyFunc
+	Content GetContentFunc
 }
 
 func ParseDir(ctx context.Context, dir string) (map[string]DescriptorWithContent, error) {
@@ -60,14 +60,14 @@ func ParseDir(ctx context.Context, dir string) (map[string]DescriptorWithContent
 						Modified:  fi.ModTime(),
 						Mode:      fi.Mode(),
 					},
-					Content: func() (io.ReadCloser, error) {
+					Content: func() (io.ReadSeekCloser, error) {
 						return os.Open(tgzfile)
 					},
 				})
 				return nil
 			}
 
-			getReader := func() (io.ReadCloser, error) {
+			getReader := func() (io.ReadSeekCloser, error) {
 				return os.Open(filename)
 			}
 
@@ -157,7 +157,7 @@ func UnTGZFile(ctx context.Context, intodir string, file string) error {
 	return nil
 }
 
-func UnTGZ(ctx context.Context, intodir string, readercloser io.ReadCloser) error {
+func UnTGZ(ctx context.Context, intodir string, readercloser io.Reader) error {
 	return tgz.Extract(ctx, readercloser, nil, func(ctx context.Context, f archiver.File) error {
 		nameinlocal := filepath.Join(intodir, f.NameInArchive)
 		if f.IsDir() {

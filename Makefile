@@ -28,11 +28,12 @@ ldflags+=-w -s
 ldflags+=-X '${GOPACKAGE}/pkg/version.gitVersion=${GIT_VERSION}'
 ldflags+=-X '${GOPACKAGE}/pkg/version.gitCommit=${GIT_COMMIT}'
 ldflags+=-X '${GOPACKAGE}/pkg/version.buildDate=${BUILD_DATE}'
+ldflags+=-extldflags=-static
 
 
 ##@ All
 
-all: build container ## build all
+all: build image ## build all
 
 ##@ General
 
@@ -55,9 +56,9 @@ check: linter ## Static code check.
 
 define build
 	@echo "Building ${1}/${2}"
-	@CGO_ENABLED=0 GOOS=${1} GOARCH=$(2) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/modelx-$(1)-$(2) ${GOPACKAGE}/cmd/modelx
-	@CGO_ENABLED=0 GOOS=${1} GOARCH=$(2) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/modelxd-$(1)-$(2) ${GOPACKAGE}/cmd/modelxd
-	@CGO_ENABLED=0 GOOS=${1} GOARCH=$(2) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/modelxdl-$(1)-$(2) ${GOPACKAGE}/cmd/modelxdl
+	@GOOS=${1} GOARCH=$(2) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/modelx-$(1)-$(2) ${GOPACKAGE}/cmd/modelx
+	@GOOS=${1} GOARCH=$(2) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/modelxd-$(1)-$(2) ${GOPACKAGE}/cmd/modelxd
+	@GOOS=${1} GOARCH=$(2) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/modelxdl-$(1)-$(2) ${GOPACKAGE}/cmd/modelxdl
 endef
 
 ##@ Build

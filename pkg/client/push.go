@@ -118,17 +118,15 @@ func (c Client) PushBlob(ctx context.Context, repo string, desc DescriptorWithCo
 		return nil
 	}
 
-	reqbody := RqeuestBody{
-		ContentLength: desc.Size,
-		ContentBody: func() (io.ReadCloser, error) {
-			rc, err := desc.Content()
-			if err != nil {
-				return nil, err
-			}
-			return p.WrapReader(rc, desc.Digest.Hex()[:8], desc.Size, "pushing", "done", "failed"), nil
-		},
+	rc, err := desc.Content()
+	if err != nil {
+		return err
 	}
-	return c.Remote.UploadBlob(ctx, repo, desc.Descriptor, reqbody)
+	rc = p.WrapReader(rc, desc.Digest.Hex()[:8], desc.Size, "pushing", "done", "failed")
+	return c.Remote.UploadBlobContent(ctx, repo, desc.Descriptor, BlobContent{
+		Content:       rc,
+		ContentLength: desc.Size,
+	})
 }
 
 func (c Client) pushDirectory(ctx context.Context, dir string, desc *types.Descriptor, repo string, bar *progress.Bar) error {
@@ -158,7 +156,7 @@ func (c Client) pushDirectory(ctx context.Context, dir string, desc *types.Descr
 	desc.Mode = fi.Mode()
 	desc.Modified = fi.ModTime()
 
-	getbody := func() (io.ReadCloser, error) {
+	getbody := func() (io.ReadSeekCloser, error) {
 		return os.Open(tgzfile)
 	}
 	return c.PushBlob(ctx, repo, DescriptorWithContent{Descriptor: *desc, Content: getbody}, bar)
@@ -192,7 +190,7 @@ func (c Client) pushFile(ctx context.Context, basedir string, desc *types.Descri
 	desc.Mode = fi.Mode()
 	desc.Modified = fi.ModTime()
 
-	getReader := func() (io.ReadCloser, error) {
+	getReader := func() (io.ReadSeekCloser, error) {
 		return os.Open(filename)
 	}
 	return c.PushBlob(ctx, repo, DescriptorWithContent{Descriptor: *desc, Content: getReader}, bar)

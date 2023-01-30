@@ -3,7 +3,6 @@ package registry
 import (
 	"context"
 	"errors"
-	"io"
 	"path"
 	"strings"
 	"time"
@@ -18,38 +17,31 @@ import (
 	"github.com/aws/smithy-go/transport/http"
 )
 
-type StorageContent struct {
-	ContentType     string
-	ContentLength   int64
-	ContentEncoding string
-	Content         io.ReadCloser
-}
-
-type StorageMeta struct {
+type FsObjectMeta struct {
 	Name         string
 	Size         int64
 	LastModified time.Time
 	Metadata     map[string]string
 }
 
-type StorageProvider interface {
-	Put(ctx context.Context, path string, content StorageContent) error
+type FSProvider interface {
+	Put(ctx context.Context, path string, content BlobContent) error
 	PutLocation(ctx context.Context, path string) (string, error)
-	Get(ctx context.Context, path string) (StorageContent, error)
+	Get(ctx context.Context, path string) (BlobContent, error)
 	GetLocation(ctx context.Context, path string) (string, error)
 	Remove(ctx context.Context, path string, recursive bool) error
 	Exists(ctx context.Context, path string) (bool, error)
-	List(ctx context.Context, path string, recursive bool) ([]StorageMeta, error)
+	List(ctx context.Context, path string, recursive bool) ([]FsObjectMeta, error)
 }
 
-func (s StorageContent) Close() error {
+func (s BlobContent) Close() error {
 	if s.Content != nil {
 		return s.Content.Close()
 	}
 	return nil
 }
 
-func (s StorageContent) Read(p []byte) (int, error) {
+func (s BlobContent) Read(p []byte) (int, error) {
 	return s.Content.Read(p)
 }
 
@@ -61,7 +53,7 @@ type S3StorageProvider struct {
 	Prefix  string
 }
 
-func (m *S3StorageProvider) Put(ctx context.Context, path string, content StorageContent) error {
+func (m *S3StorageProvider) Put(ctx context.Context, path string, content BlobContent) error {
 	uploadobj := &s3.PutObjectInput{
 		Bucket:        aws.String(m.Bucket),
 		Key:           m.prefixedKey(path),
@@ -127,15 +119,15 @@ func (m *S3StorageProvider) Remove(ctx context.Context, path string, recursive b
 	}
 }
 
-func (m *S3StorageProvider) Get(ctx context.Context, path string) (StorageContent, error) {
+func (m *S3StorageProvider) Get(ctx context.Context, path string) (BlobContent, error) {
 	getobjout, err := m.Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(m.Bucket),
 		Key:    m.prefixedKey(path),
 	})
 	if err != nil {
-		return StorageContent{}, err
+		return BlobContent{}, err
 	}
-	return StorageContent{
+	return BlobContent{
 		Content:         getobjout.Body,
 		ContentType:     pointer.StringDeref(getobjout.ContentType, ""),
 		ContentLength:   getobjout.ContentLength,
@@ -169,7 +161,7 @@ func (m *S3StorageProvider) Exists(ctx context.Context, path string) (bool, erro
 	return true, nil
 }
 
-func (m *S3StorageProvider) List(ctx context.Context, path string, recursive bool) ([]StorageMeta, error) {
+func (m *S3StorageProvider) List(ctx context.Context, path string, recursive bool) ([]FsObjectMeta, error) {
 	prefix := *m.prefixedKey(path)
 	if !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
@@ -181,13 +173,13 @@ func (m *S3StorageProvider) List(ctx context.Context, path string, recursive boo
 	if !recursive {
 		listinput.Delimiter = aws.String("/")
 	}
-	var result []StorageMeta
+	var result []FsObjectMeta
 	listobjout, err := m.Client.ListObjects(ctx, listinput)
 	if err != nil {
 		return nil, err
 	}
 	for _, obj := range listobjout.Contents {
-		result = append(result, StorageMeta{
+		result = append(result, FsObjectMeta{
 			Name:         strings.TrimPrefix(*obj.Key, prefix),
 			Size:         obj.Size,
 			LastModified: *obj.LastModified,
@@ -200,7 +192,7 @@ func (m *S3StorageProvider) List(ctx context.Context, path string, recursive boo
 			return nil, err
 		}
 		for _, obj := range listobjout.Contents {
-			result = append(result, StorageMeta{
+			result = append(result, FsObjectMeta{
 				Name:         strings.TrimPrefix(*obj.Key, prefix),
 				Size:         obj.Size,
 				LastModified: *obj.LastModified,

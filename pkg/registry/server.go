@@ -2,19 +2,13 @@ package registry
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gorilla/handlers"
-	"kubegems.io/modelx/pkg/errors"
 )
 
 func Run(ctx context.Context, opts *Options) error {
@@ -51,73 +45,23 @@ func Run(ctx context.Context, opts *Options) error {
 }
 
 func NewRegistry(ctx context.Context, opt *Options) (*Registry, error) {
-	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(opt.S3.AccessKey, opt.S3.SecretKey, ""),
-		),
-		config.WithRegion(opt.S3.Region),
-		config.WithEndpointResolverWithOptions(
-			aws.EndpointResolverWithOptionsFunc(
-				func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-					return aws.Endpoint{URL: opt.S3.URL}, nil
-				},
-			),
-		),
-	)
-	if err != nil {
-		return nil, err
-	}
-	s3cli := s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.UsePathStyle = true
-	})
-	storage := &S3StorageProvider{
-		Bucket:  opt.S3.Buket,
-		Client:  s3cli,
-		Expire:  opt.S3.PresignExpire,
-		Prefix:  "registry",
-		PreSign: s3.NewPresignClient(s3cli),
-	}
-	store := &RegistryStore{
-		Storage:        storage,
-		EnableRedirect: opt.EnableRedirect,
-	}
-	if err := store.RefreshGlobalIndex(ctx); err != nil {
-		return nil, err
-	}
-	return &Registry{Manifest: store}, nil
-}
-
-func NewOIDCAuthFilter(ctx context.Context, issuer string, next http.Handler) http.Handler {
-	ctx = oidc.InsecureIssuerURLContext(ctx, issuer)
-	provider, err := oidc.NewProvider(ctx, issuer)
-	if err != nil {
-		log.Fatal(err)
-	}
-	verifier := provider.Verifier(&oidc.Config{
-		SkipClientIDCheck: true,
-		SkipIssuerCheck:   true,
-	})
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		headerAuthorzation := r.Header.Get("Authorization")
-		token := strings.TrimPrefix(headerAuthorzation, "Bearer ")
-		if token == "" {
-			queries := r.URL.Query()
-			for _, k := range []string{"token", "access_token"} {
-				if token = queries.Get(k); token != "" {
-					break
-				}
-			}
-		}
-		if len(token) == 0 {
-			ResponseError(w, errors.NewUnauthorizedError("missing access token"))
-			return
-		}
-		idtoken, err := verifier.Verify(r.Context(), token)
+	var registryStore RegistryStore
+	if opt.Vault.Address != "" {
+		vaultRegistrystore, err := NewVaultRegistryStore(ctx, opt.Vault)
 		if err != nil {
-			ResponseError(w, errors.NewUnauthorizedError("invalid access token"))
-			return
+			return nil, err
 		}
-		r.Header.Set("username", idtoken.Subject)
-		next.ServeHTTP(w, r)
-	})
+		registryStore = vaultRegistrystore
+	}
+	if opt.S3.URL != "" {
+		fsstore, err := NewFSRegistryStore(ctx, opt.S3, opt.EnableRedirect)
+		if err != nil {
+			return nil, err
+		}
+		registryStore = fsstore
+	}
+	if registryStore == nil {
+		return nil, fmt.Errorf("no storage backend set")
+	}
+	return &Registry{Store: registryStore}, nil
 }

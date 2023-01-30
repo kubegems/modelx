@@ -1,9 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -60,19 +60,14 @@ func Run(ctx context.Context, uri string, dest string) error {
 	if err != nil {
 		return err
 	}
-	content, _, err := cli.Remote.GetBlob(ctx, ref.Repository, manifest.Config.Digest)
-	if err != nil {
-		return err
-	}
-	defer content.Close()
+	into := bytes.NewBuffer(nil)
 
-	contentbytes, err := io.ReadAll(content)
-	if err != nil {
+	if err := cli.Remote.GetBlobContent(ctx, ref.Repository, manifest.Config.Digest, into); err != nil {
 		return err
 	}
 
 	config := &model.ModelConfig{}
-	if err := yaml.Unmarshal(contentbytes, config); err != nil {
+	if err := yaml.Unmarshal(into.Bytes(), config); err != nil {
 		return err
 	}
 

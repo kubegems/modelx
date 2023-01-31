@@ -87,18 +87,6 @@ func NewFSRegistryStore(ctx context.Context, s3options *S3Options, enableredirec
 	return store, nil
 }
 
-func BlobDigestPath(repository string, d digest.Digest) string {
-	return path.Join(repository, "blobs", d.Algorithm().String(), d.Hex())
-}
-
-func IndexPath(repository string) string {
-	return path.Join(repository, RegistryIndexFileName)
-}
-
-func ManifestPath(repository string, reference string) string {
-	return path.Join(repository, "manifests", reference)
-}
-
 func (m *FSRegistryStore) ExistsManifest(ctx context.Context, repository string, reference string) (bool, error) {
 	if ok, err := m.FS.Exists(ctx, ManifestPath(repository, reference)); err != nil {
 		return false, errors.NewInternalError(err)
@@ -154,6 +142,9 @@ func (m *FSRegistryStore) DeleteManifest(ctx context.Context, repository string,
 func (m *FSRegistryStore) GetIndex(ctx context.Context, repository string, search string) (types.Index, error) {
 	body, err := m.FS.Get(ctx, IndexPath(repository))
 	if err != nil {
+		if IsS3StorageNotFound(err) {
+			return types.Index{}, ErrRegistryStoreNotFound
+		}
 		return types.Index{}, err
 	}
 	defer body.Close()
@@ -277,6 +268,9 @@ func (m *FSRegistryStore) RefreshIndex(ctx context.Context, repository string) e
 func (m *FSRegistryStore) GetGlobalIndex(ctx context.Context, search string) (types.Index, error) {
 	body, err := m.FS.Get(ctx, IndexPath(""))
 	if err != nil {
+		if IsS3StorageNotFound(err) {
+			return types.Index{}, ErrRegistryStoreNotFound
+		}
 		return types.Index{}, err
 	}
 	defer body.Close()

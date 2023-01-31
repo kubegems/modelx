@@ -12,13 +12,13 @@ import (
 var SpinnerDefault = []rune{'⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'}
 
 type Bar struct {
-	Name      string
-	Total     int64  // total bytes, -1 for indeterminate
-	Completed int64  // completed bytes
-	Width     int    // width of the bar
-	Status    string // status text
-	Done      bool   // if the bar is done
-	mp        *MultiBar
+	Name   string
+	Total  int64  // total bytes, -1 for indeterminate
+	Used   int64  // completed bytes
+	Width  int    // width of the bar
+	Status string // status text
+	Done   bool   // if the bar is done
+	mp     *MultiBar
 }
 
 func (b *Bar) Write(w io.Writer) {
@@ -36,11 +36,11 @@ func (b *Bar) Write(w io.Writer) {
 			completed = 0
 			status = b.Status
 		} else {
-			completed = int(float64(b.Width) * float64(b.Completed) / float64(b.Total))
+			completed = int(float64(b.Width) * float64(b.Used) / float64(b.Total))
 			if completed < 0 {
 				completed = 0
 			}
-			status = units.HumanSize(float64(b.Completed)) + "/" + units.HumanSize(float64(b.Total))
+			status = units.HumanSize(float64(b.Used)) + "/" + units.HumanSize(float64(b.Total))
 		}
 	}
 
@@ -70,33 +70,42 @@ func percent(total, completed int64) int {
 }
 
 func (b *Bar) SetProgress(completed, total int64) {
-	b.Completed, b.Total = completed, total
+	b.Used, b.Total = completed, total
 	b.Notify()
 }
 
-func (b *Bar) SetStatus(name, status string) {
+func (b *Bar) SetNameStatus(name, status string) {
 	b.Name, b.Status = name, status
 	b.Notify()
 }
 
-func (b *Bar) Increment(n int64) {
-	b.Completed += n
+func (b *Bar) SetStatus(status string) {
+	b.Status = status
 	b.Notify()
 }
 
-func (b *Bar) WrapReader(rc io.ReadSeekCloser, name string, total int64, onProcess, onComplete, onFailed string) io.ReadSeekCloser {
+func (b *Bar) SetDone() {
+	b.Done = true
+	b.Notify()
+}
+
+func (b *Bar) Increment(n int64) {
+	b.Used += n
+	b.Notify()
+}
+
+func (b *Bar) WrapReader(rc io.ReadCloser, total int64, initStatus, failedStatus string) io.ReadCloser {
 	b.Total = total
-	b.Status = onProcess
-	b.Name = name
+	b.Status = initStatus
+	b.Used = 0 // reset
 	defer b.Notify()
-	return &barReader{rc: rc, b: b, onComplete: onComplete}
+	return &barReader{rc: rc, b: b, failedStatus: failedStatus}
 }
 
 type barReader struct {
-	rc         io.ReadSeekCloser
-	b          *Bar
-	onComplete string
-	onFailed   string
+	rc           io.ReadCloser
+	b            *Bar
+	failedStatus string
 }
 
 func (r *Bar) Notify() {
@@ -107,59 +116,45 @@ func (r *Bar) Notify() {
 
 func (r *barReader) Read(p []byte) (int, error) {
 	n, err := r.rc.Read(p)
-
-	r.b.Completed += int64(n)
-	r.b.mp.haschange = true
-	if r.b.Completed >= r.b.Total {
-		r.b.Status = r.onComplete
-		r.b.Done = true
+	if err != nil {
+		r.b.Status = r.failedStatus
 	}
-
+	r.b.Used += int64(n)
+	r.b.mp.haschange = true
 	return n, err
 }
 
-func (r *barReader) Seek(offset int64, whence int) (int64, error) {
-	return r.rc.Seek(offset, whence)
-}
-
 func (r *barReader) Close() error {
-	if r.b.Completed < r.b.Total {
-		r.b.Status = r.onFailed
+	if r.b.Used < r.b.Total {
+		r.b.Status = r.failedStatus
 	}
 	r.b.Notify()
 	return r.rc.Close()
 }
 
-func (b *Bar) WrapWriter(w io.Writer, name string, total int64, onProcess, onComplete, onFailed string) io.Writer {
+func (b *Bar) WrapWriter(w io.Writer, name string, total int64, initStatus, failedStatus string) io.Writer {
 	b.Name = name
 	b.Total = total
-	b.Status = onProcess
+	b.Status = initStatus
+	b.Used = 0
 	b.Notify()
-	return &bario{w: w, b: b, onComplete: onComplete, onFailed: onFailed}
+	return &bario{w: w, b: b, onFailed: failedStatus}
 }
 
 type bario struct {
-	w          io.Writer
-	b          *Bar
-	onComplete string
-	onFailed   string
+	w        io.Writer
+	b        *Bar
+	onFailed string
 }
 
 func (r *bario) Write(p []byte) (int, error) {
 	n, err := r.w.Write(p)
 	if err != nil {
-		r.b.mp.haschange = true
-		r.b.Done = true
 		r.b.Status = r.onFailed
-		return n, err
 	}
-	r.b.Completed += int64(n)
+	r.b.Used += int64(n)
 	r.b.mp.haschange = true
-	if r.b.Completed >= r.b.Total {
-		r.b.Status = r.onComplete
-		r.b.Done = true
-	}
-	return n, nil
+	return n, err
 }
 
 func (r *bario) WriteAt(p []byte, off int64) (int, error) {
@@ -174,11 +169,7 @@ func (r *bario) WriteAt(p []byte, off int64) (int, error) {
 		r.b.Status = r.onFailed
 		return n, err
 	}
-	r.b.Completed += int64(n)
+	r.b.Used += int64(n)
 	r.b.mp.haschange = true
-	if r.b.Completed >= r.b.Total {
-		r.b.Status = r.onComplete
-		r.b.Done = true
-	}
 	return n, nil
 }

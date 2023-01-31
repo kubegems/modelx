@@ -23,18 +23,56 @@ const (
 
 var EmptyFileDigiest = digest.Canonical.FromBytes(nil)
 
-const PushConcurrency = 5
+const PullPushConcurrency = 3
 
 func (c Client) Push(ctx context.Context, repo, version string, configfile, basedir string) error {
-	manifest := types.Manifest{
-		MediaType: MediaTypeModelManifestJson,
-	}
-
-	ds, err := os.ReadDir(basedir)
+	manifest, err := ParseManifest(ctx, basedir, configfile)
 	if err != nil {
 		return err
 	}
+	p := progress.NewMuiltiBar(os.Stdout, 40, PullPushConcurrency)
+	go p.Run(ctx)
 
+	// push blobs
+	for i := range manifest.Blobs {
+		desc := &manifest.Blobs[i]
+		p.Go(desc.Name, "pending", func(b *progress.Bar) error {
+			switch desc.MediaType {
+			case MediaTypeModelFile:
+				return c.pushFile(ctx, filepath.Join(basedir, desc.Name), desc, repo, b)
+			case MediaTypeModelDirectoryTarGz:
+				return c.pushDirectory(ctx, basedir, filepath.Join(basedir, desc.Name), desc, repo, b)
+			default:
+				return nil
+			}
+		})
+	}
+	// push config
+	p.Go(manifest.Config.Name, "pending", func(b *progress.Bar) error {
+		return c.pushFile(ctx, filepath.Join(basedir, manifest.Config.Name), &manifest.Config, repo, b)
+	})
+	if err := p.Wait(); err != nil {
+		return err
+	}
+	// push manifest
+	p.Go("manifest", "pushing", func(b *progress.Bar) error {
+		if err := c.PutManifest(ctx, repo, version, *manifest); err != nil {
+			return err
+		}
+		b.SetNameStatus("manifest", "done")
+		return nil
+	})
+	return p.Wait()
+}
+
+func ParseManifest(ctx context.Context, basedir string, configfile string) (*types.Manifest, error) {
+	manifest := &types.Manifest{
+		MediaType: MediaTypeModelManifestJson,
+	}
+	ds, err := os.ReadDir(basedir)
+	if err != nil {
+		return nil, err
+	}
 	for _, entry := range ds {
 		if strings.HasPrefix(entry.Name(), ".") {
 			continue
@@ -58,140 +96,90 @@ func (c Client) Push(ctx context.Context, repo, version string, configfile, base
 			MediaType: MediaTypeModelFile,
 		})
 	}
-
-	// sort blobs by name
 	slices.SortFunc(manifest.Blobs, types.SortDescriptorName)
+	return manifest, nil
+}
 
-	p := progress.NewMuiltiBar(os.Stdout, 40)
-	go p.Run(ctx)
-
-	// push blobs
-	for i := range manifest.Blobs {
-		desc := &manifest.Blobs[i]
-
-		p.Go(desc.Name, "pending", func(b *progress.Bar) error {
-			switch desc.MediaType {
-			case MediaTypeModelFile:
-				return c.pushFile(ctx, basedir, desc, repo, b)
-			case MediaTypeModelDirectoryTarGz:
-				return c.pushDirectory(ctx, basedir, desc, repo, b)
-			default:
-				return nil
-			}
-		})
-
-	}
-
-	// push config
-	p.Go(manifest.Config.Name, "pending", func(b *progress.Bar) error {
-		return c.pushFile(ctx, basedir, &manifest.Config, repo, b)
-	})
-
-	if err := p.Wait(); err != nil {
+func (c Client) pushDirectory(ctx context.Context, cachedir, blobdir string, desc *types.Descriptor, repo string, bar *progress.Bar) error {
+	diri, err := os.Stat(blobdir)
+	if err != nil {
 		return err
 	}
+	desc.Mode = diri.Mode()
+	desc.Modified = diri.ModTime()
 
-	// push manifest
-	p.Go("manifest", "pushing", func(b *progress.Bar) error {
-		if err := c.PutManifest(ctx, repo, version, manifest); err != nil {
+	bar.SetNameStatus(desc.Name, "digesting")
+	filename := filepath.Join(cachedir, ".modelx", desc.Name+".tar.gz")
+	digest, err := TGZ(ctx, blobdir, filename)
+	if err != nil {
+		return err
+	}
+	desc.Digest = digest
+	return c.pushFile(ctx, filename, desc, repo, bar)
+}
+
+func (c Client) pushFile(ctx context.Context, blobfile string, desc *types.Descriptor, repo string, bar *progress.Bar) error {
+	fi, err := os.Stat(blobfile)
+	if err != nil {
+		return err
+	}
+	if desc.Digest == "" {
+		bar.SetNameStatus(desc.Name, "digesting")
+		f, err := os.Open(blobfile)
+		if err != nil {
 			return err
 		}
-		b.SetStatus("manifest", "done")
-		return nil
-	})
-	return p.Wait()
+		digest, err := digest.FromReader(f)
+		_ = f.Close()
+		if err != nil {
+			return err
+		}
+		desc.Digest = digest
+	}
+	if desc.Size == 0 {
+		desc.Size = fi.Size()
+	}
+	if desc.Mode == 0 {
+		desc.Mode = fi.Mode()
+	}
+	if desc.Modified.IsZero() {
+		desc.Modified = fi.ModTime()
+	}
+	getReader := func() (io.ReadCloser, error) {
+		return os.Open(blobfile)
+	}
+	bar.SetNameStatus(desc.Digest.Hex()[:8], "pending")
+	return c.PushBlob(ctx, repo, DescriptorWithContent{Descriptor: *desc, GetContent: getReader}, bar)
 }
 
 func (c Client) PushBlob(ctx context.Context, repo string, desc DescriptorWithContent, p *progress.Bar) error {
 	if desc.Digest == EmptyFileDigiest {
-		p.SetStatus(desc.Digest.Hex()[:8], "empty")
+		p.SetStatus("empty")
 		return nil
 	}
-
 	exist, err := c.Remote.HeadBlob(ctx, repo, desc.Digest)
 	if err != nil {
 		return err
 	}
 	if exist {
 		p.SetProgress(desc.Size, desc.Size)
-		p.SetStatus(desc.Digest.Hex()[:8], "skipped")
+		p.SetStatus("skipped")
 		return nil
 	}
-
-	rc, err := desc.Content()
-	if err != nil {
+	wrappdesc := DescriptorWithContent{
+		Descriptor: desc.Descriptor,
+		GetContent: func() (io.ReadCloser, error) {
+			content, err := desc.GetContent()
+			if err != nil {
+				return nil, err
+			}
+			content = p.WrapReader(content, desc.Size, "pushing", "failed")
+			return content, nil
+		},
+	}
+	if err := c.Remote.UploadBlobContent(ctx, repo, wrappdesc); err != nil {
 		return err
 	}
-	rc = p.WrapReader(rc, desc.Digest.Hex()[:8], desc.Size, "pushing", "done", "failed")
-	return c.Remote.UploadBlobContent(ctx, repo, desc.Descriptor, BlobContent{
-		Content:       rc,
-		ContentLength: desc.Size,
-	})
-}
-
-func (c Client) pushDirectory(ctx context.Context, dir string, desc *types.Descriptor, repo string, bar *progress.Bar) error {
-	tgzfile := filepath.Join(dir, ".modelx", desc.Name+".tar.gz")
-	entrydir := filepath.Join(dir, desc.Name)
-
-	fi, err := os.Stat(entrydir)
-	if err != nil {
-		return err
-	}
-
-	bar.SetStatus(desc.Name, "digesting")
-
-	digest, err := TGZ(ctx, entrydir, tgzfile)
-	if err != nil {
-		return err
-	}
-	tgzfi, err := os.Stat(tgzfile)
-	if err != nil {
-		return err
-	}
-
-	bar.SetStatus(digest.Hex()[:8], "preparing")
-
-	desc.Digest = digest
-	desc.Size = tgzfi.Size()
-	desc.Mode = fi.Mode()
-	desc.Modified = fi.ModTime()
-
-	getbody := func() (io.ReadSeekCloser, error) {
-		return os.Open(tgzfile)
-	}
-	return c.PushBlob(ctx, repo, DescriptorWithContent{Descriptor: *desc, Content: getbody}, bar)
-}
-
-func (c Client) pushFile(ctx context.Context, basedir string, desc *types.Descriptor, repo string, bar *progress.Bar) error {
-	filename := filepath.Join(basedir, desc.Name)
-
-	fi, err := os.Stat(filename)
-	if err != nil {
-		return err
-	}
-
-	f, err := os.Open(filename)
-	if err != nil {
-		return err
-	}
-
-	bar.SetStatus(desc.Name, "digesting")
-
-	digest, err := digest.FromReader(f)
-	_ = f.Close()
-	if err != nil {
-		return err
-	}
-
-	bar.SetStatus(digest.Hex()[:8], "preparing")
-
-	desc.Digest = digest
-	desc.Size = fi.Size()
-	desc.Mode = fi.Mode()
-	desc.Modified = fi.ModTime()
-
-	getReader := func() (io.ReadSeekCloser, error) {
-		return os.Open(filename)
-	}
-	return c.PushBlob(ctx, repo, DescriptorWithContent{Descriptor: *desc, Content: getReader}, bar)
+	p.SetStatus("done")
+	return nil
 }

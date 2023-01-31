@@ -25,15 +25,18 @@ func HTTPDownload(ctx context.Context, location *url.URL, into io.Writer) error 
 	return err
 }
 
-func HTTPUpload(ctx context.Context, location *url.URL, blob *BlobContent) error {
-	req, err := http.NewRequest("POST", location.String(), blob.Content)
+func HTTPUpload(ctx context.Context, location *url.URL, blob DescriptorWithContent) error {
+	content, err := blob.GetContent()
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("POST", location.String(), content)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
-	req.ContentLength = blob.ContentLength
 	req.Header.Set("User-Agent", UserAgent)
-
+	req.ContentLength = blob.Size
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err

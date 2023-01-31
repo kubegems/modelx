@@ -48,6 +48,9 @@ type VaultClient struct {
 	serviceProject  *models.Project
 	registerTimeout time.Duration
 	vaultServiceUrl string
+
+	// cache
+	assetsCache *AssetCache
 }
 
 func NewVaultClient(ctx context.Context, options *VaultOptions) (*VaultClient, error) {
@@ -70,19 +73,24 @@ func NewVaultClient(ctx context.Context, options *VaultOptions) (*VaultClient, e
 	if err != nil {
 		return nil, err
 	}
-	return &VaultClient{
+	cli := &VaultClient{
 		kv:              kv,
 		vault:           vault,
 		registerTimeout: DefaultRegisterTimeout,
 		serviceWallet:   serviceWallet,
 		serviceProject:  serviceProject,
 		vaultServiceUrl: options.Address,
-	}, nil
+	}
+	cli.assetsCache = NewAssetCache(cli)
+	if err := cli.assetsCache.InitSync(ctx); err != nil {
+		return nil, err
+	}
+	return cli, nil
 }
 
 func initProject(ctx context.Context, vault *sdkvault.Vault, wallet *sdkwallet.Wallet, options *VaultOptions) (*models.Project, error) {
 	log := logr.FromContextOrDiscard(ctx).WithValues("project", options.Project)
-
+	log.Info("init service project")
 	projects, err := vault.GetProjects(ctx,
 		sdkvault.ProjectsOwnerAddressOption(wallet.GetAddress()),
 		sdkvault.ProjectsNameOption(options.Project),
@@ -140,7 +148,7 @@ func (s *VaultClient) ServiceProjectAddress() string {
 	return s.serviceProject.Address.String()
 }
 
-func (s *VaultClient) GenerateBolbURL(ctx context.Context, assetid *big.Int, allowread, allowwrite bool) (string, error) {
+func (s *VaultClient) GenerateBolbURL(ctx context.Context, assetid *big.Int, filename string, allowread, allowwrite bool) (string, error) {
 	accessgrant, err := s.vault.ShareAssetRaw(ctx,
 		s.ServiceWallet(),
 		nil, // access grant
@@ -152,7 +160,7 @@ func (s *VaultClient) GenerateBolbURL(ctx context.Context, assetid *big.Int, all
 		sdkvault.AssetShareDisallowWritesOption(!allowwrite),
 	)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("share asset:%w", err)
 	}
 	vaultassetmeta := types.VaultBlobMeta{
 		ServiceUrl:     s.vaultServiceUrl,
@@ -160,6 +168,7 @@ func (s *VaultClient) GenerateBolbURL(ctx context.Context, assetid *big.Int, all
 		AssetID:        assetid,
 		AccessGrant:    accessgrant,
 		Username:       UsernameFromContext(ctx),
+		File:           filename,
 	}
 	return vaultassetmeta.ToURL()
 }
@@ -172,82 +181,12 @@ func (s *VaultClient) ListAssets(ctx context.Context) ([]*models.Asset, error) {
 	return assets.Items, nil
 }
 
-func (s *VaultClient) GetOrCreateAsset(ctx context.Context, name string, ownneraddress string) (*models.Asset, *models.AssetAttribute, error) {
-	log := logr.FromContextOrDiscard(ctx)
+func (s *VaultClient) GetAsset(ctx context.Context, name string) (*models.Asset, error) {
+	return s.assetsCache.GetByName(ctx, name, "")
+}
 
-	assets, err := s.vault.GetAssets(ctx, s.ServiceProjectAddress())
-	if err != nil {
-		return nil, nil, err
-	}
-	for _, asset := range assets.Items {
-		if len(asset.Attribute) == 0 {
-			continue
-		}
-		attrs, err := models.UnmarshalAssetAttribute(asset.Attribute)
-		if err != nil {
-			log.Error(err, "decode asset attr")
-			continue
-		}
-		defaultitem, ok := attrs.Items["default"]
-		if !ok {
-			continue
-		}
-		if name == defaultitem.Name {
-			return asset, attrs, nil
-		}
-	}
-	resp, err := s.vault.MintAsset(ctx,
-		s.registerTimeout,
-		s.ServiceWallet(),
-		s.ServiceProjectAddress(),
-		ownneraddress,
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-	var assetid *big.Int
-	if resp.Status == models.TransactionExecPending {
-		if err := wait.PollUntilWithContext(ctx, time.Second, func(ctx context.Context) (done bool, err error) {
-			resultresp, err := s.vault.GetMintAssetResult(ctx, resp.TxHash)
-			if err != nil {
-				return false, err
-			}
-			if resultresp.Status == models.TransactionExecSuccess {
-				assetid = big.NewInt(int64(*resultresp.AssetId))
-				return true, nil
-			}
-			return false, nil
-		}); err != nil {
-			return nil, nil, err
-		}
-	} else {
-		assetid = big.NewInt(int64(*resp.AssetId))
-	}
-	if err := s.vault.SetAssetAttribute(ctx,
-		s.ServiceWallet(),
-		nil, // access grant
-		s.ServiceProjectAddress(),
-		assetid,
-		&models.AssetAttributeItem{
-			Name:        name,
-			Description: name,
-			Tags:        []string{"modelx"},
-			ImageUri:    "-",
-			Attributes:  map[string]interface{}{"key": name},
-		},
-	); err != nil {
-		return nil, nil, err
-	}
-	asset, err := s.vault.GetAssetById(ctx, s.ServiceProjectAddress(), assetid)
-	if err != nil {
-		return nil, nil, err
-	}
-	attrs, err := models.UnmarshalAssetAttribute(asset.Attribute)
-	if err != nil {
-		log.Error(err, "decode asset attr")
-		return nil, nil, err
-	}
-	return asset, attrs, nil
+func (s *VaultClient) GetOrCreateAsset(ctx context.Context, name string, ownneraddress string) (*models.Asset, error) {
+	return s.assetsCache.GetByName(ctx, name, ownneraddress)
 }
 
 func (s *VaultClient) PutAssetAttr(ctx context.Context, assetid *big.Int, kvs map[string]any) error {
@@ -276,7 +215,7 @@ func (s *VaultClient) ListAssetFile(ctx context.Context, assetid *big.Int, prefi
 	}
 	retlist := []*models.RawFile{}
 	for _, item := range list.Items {
-		if prefix != "" || !strings.HasPrefix(item.Name, prefix) {
+		if prefix != "" && !strings.HasPrefix(item.Name, prefix) {
 			continue
 		}
 		retlist = append(retlist, item)
@@ -356,12 +295,12 @@ func (s *VaultClient) GetOrCreateWallet(ctx context.Context, username string) (*
 	existsAccount, err := s.vault.GetAccountByUsername(ctx, username)
 	if err != nil {
 		if !errors.Is(err, sdkerrs.ErrorAccountNotFound) {
-			return nil, err
+			return nil, fmt.Errorf("get account: %w", err)
 		}
 		// create useraccount
 		resp, wallet, mnemonicWords, err := s.vault.RegisterAccount(ctx, s.registerTimeout, username, "")
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("register account: %w", err)
 		}
 		log.Info("created wallet", "resp", resp)
 		if err := s.kv.Set(ctx, username, mnemonicWords); err != nil {

@@ -19,12 +19,12 @@ func TestNewVaultStore(t *testing.T) {
 		return
 	}
 
-	asset, attrs, err := cli.GetOrCreateAsset(ctx, "demo-repositoey/name", cli.serviceWallet.GetAddress())
+	asset, err := cli.GetOrCreateAsset(ctx, "demo-repositoey/name", cli.serviceWallet.GetAddress())
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	t.Log(asset, attrs)
+	t.Log(asset)
 
 	assets, err := cli.ListAssets(ctx)
 	if err != nil {

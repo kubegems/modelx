@@ -3,9 +3,7 @@ package types
 import (
 	"math/big"
 	"net/url"
-	"path"
 	"strconv"
-	"strings"
 )
 
 type VaultBlobMeta struct {
@@ -29,11 +27,13 @@ func (u VaultBlobMeta) ToURL() (string, error) {
 	return (&url.URL{
 		Scheme: schema,
 		Host:   s.Host,
-		Path:   path.Join(s.Path, u.ProjectAddress, u.AssetID.String()),
+		Path:   s.Path,
 		RawQuery: url.Values{
-			"access-grant": {u.AccessGrant},
-			"username":     {u.Username},
-			"file":         {u.File},
+			"project-address": {u.ProjectAddress},
+			"asset-id":        {u.AssetID.String()},
+			"access-grant":    {u.AccessGrant},
+			"username":        {u.Username},
+			"file":            {u.File},
 		}.Encode(),
 	}).String(), nil
 }
@@ -43,23 +43,22 @@ func ParseVaultURL(in string) (*VaultBlobMeta, error) {
 	if err != nil {
 		return nil, err
 	}
+	schema := "http"
+	if u.Scheme == "idoes" {
+		schema = "https"
+	}
+	queries := u.Query()
+	parsedint, err := strconv.Atoi(queries.Get("asset-id"))
+	if err != nil {
+		return nil, err
+	}
 	ret := &VaultBlobMeta{
-		ServiceUrl:  u.Host,
-		AccessGrant: u.Query().Get("access-grant"),
-		Username:    u.Query().Get("username"),
-		File:        u.Query().Get("file"),
-	}
-	splites := strings.Split(u.Path, "/")
-	// splites: []string len: 3, cap: 3, ["","0x1234567890abcdef","1"]
-	if len(splites) > 1 {
-		ret.ProjectAddress = splites[1]
-	}
-	if len(splites) > 2 {
-		parsedint, err := strconv.Atoi(splites[2])
-		if err != nil {
-			return nil, err
-		}
-		ret.AssetID = big.NewInt(int64(parsedint))
+		ServiceUrl:     (&url.URL{Scheme: schema, Host: u.Host, Path: u.Path}).String(),
+		AccessGrant:    queries.Get("access-grant"),
+		Username:       queries.Get("username"),
+		File:           queries.Get("file"),
+		ProjectAddress: queries.Get("project-address"),
+		AssetID:        big.NewInt(int64(parsedint)),
 	}
 	return ret, nil
 }

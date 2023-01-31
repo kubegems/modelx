@@ -10,7 +10,6 @@ import (
 
 	"github.com/opencontainers/go-digest"
 	"kubegems.io/modelx/pkg/errors"
-	"kubegems.io/modelx/pkg/types"
 )
 
 var GlobalExtensions = map[string]Extension{
@@ -20,7 +19,7 @@ var GlobalExtensions = map[string]Extension{
 
 type Extension interface {
 	Download(ctx context.Context, location *url.URL, into io.Writer) error
-	Upload(ctx context.Context, location *url.URL, blob *BlobContent) error
+	Upload(ctx context.Context, location *url.URL, blob DescriptorWithContent) error
 }
 
 func ExtDownload(ctx context.Context, location *url.URL, into io.Writer) error {
@@ -30,7 +29,7 @@ func ExtDownload(ctx context.Context, location *url.URL, into io.Writer) error {
 	return HTTPDownload(ctx, location, into)
 }
 
-func ExtUpload(ctx context.Context, location *url.URL, blob *BlobContent) error {
+func ExtUpload(ctx context.Context, location *url.URL, blob DescriptorWithContent) error {
 	if ext, ok := GlobalExtensions[location.Scheme]; ok {
 		return ext.Upload(ctx, location, blob)
 	}
@@ -38,7 +37,7 @@ func ExtUpload(ctx context.Context, location *url.URL, blob *BlobContent) error 
 }
 
 type BlobContent struct {
-	Content       io.ReadSeekCloser
+	Content       io.ReadCloser
 	ContentLength int64
 }
 
@@ -54,7 +53,7 @@ func (t *RegistryClient) HeadBlob(ctx context.Context, repository string, digest
 func (t *RegistryClient) GetBlobContent(ctx context.Context, repository string, digest digest.Digest, into io.Writer) error {
 	path := "/" + repository + "/blobs/" + digest.String()
 	headers := map[string][]string{}
-	resp, err := t.requestRaw(ctx, "GET", path, headers, nil)
+	resp, err := t.extrequest(ctx, "GET", path, headers, 0, nil)
 	if err != nil {
 		return err
 	}
@@ -69,18 +68,22 @@ func (t *RegistryClient) GetBlobContent(ctx context.Context, repository string, 
 		}
 		return ExtDownload(ctx, locau, into)
 	}
-
 	_, err = io.CopyN(into, resp.Body, resp.ContentLength)
 	return err
 }
 
-func (t *RegistryClient) UploadBlobContent(ctx context.Context, repository string, desc types.Descriptor, blob BlobContent) error {
+func (t *RegistryClient) UploadBlobContent(ctx context.Context, repository string, blob DescriptorWithContent) error {
 	header := map[string][]string{
 		"Content-Type": {"application/octet-stream"},
 	}
-	path := "/" + repository + "/blobs/" + desc.Digest.String()
+	path := "/" + repository + "/blobs/" + blob.Digest.String()
 
-	resp, err := t.requestRaw(ctx, "PUT", path, header, &blob)
+	content, err := blob.GetContent()
+	if err != nil {
+		return err
+	}
+
+	resp, err := t.extrequest(ctx, "PUT", path, header, blob.Size, content)
 	if err != nil {
 		return err
 	}
@@ -93,12 +96,12 @@ func (t *RegistryClient) UploadBlobContent(ctx context.Context, repository strin
 		if err != nil {
 			return errors.NewInternalError(fmt.Errorf("invalid location %s: %w", loc, err))
 		}
-		return ExtUpload(ctx, locau, &blob)
+		return ExtUpload(ctx, locau, blob)
 	}
 	return nil
 }
 
-func (t *RegistryClient) requestRaw(ctx context.Context, method, url string, header map[string][]string, blob *BlobContent) (*http.Response, error) {
+func (t *RegistryClient) extrequest(ctx context.Context, method, url string, header map[string][]string, contentlen int64, content io.ReadCloser) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, t.Registry+url, nil)
 	if err != nil {
 		return nil, err
@@ -108,11 +111,8 @@ func (t *RegistryClient) requestRaw(ctx context.Context, method, url string, hea
 	}
 	req.Header.Set("Authorization", t.Authorization)
 	req.Header.Set("User-Agent", UserAgent)
-
-	if blob != nil {
-		req.Body = blob.Content
-		req.ContentLength = blob.ContentLength
-	}
+	req.Body = content
+	req.ContentLength = contentlen
 	resp, err := t.httpcli.Do(req)
 	if err != nil {
 		return nil, err

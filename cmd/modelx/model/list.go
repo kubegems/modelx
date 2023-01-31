@@ -134,7 +134,7 @@ func List(ctx context.Context, ref string, search string) (*ShowList, error) {
 			show.Items = append(show.Items, []any{
 				item.Name,
 				getType(item.MediaType),
-				units.HumanSize(float64(item.Size)),
+				formatSize(item.Size),
 				item.Digest.Encoded()[:16],
 				formattime(item.Modified),
 			})
@@ -151,10 +151,21 @@ func List(ctx context.Context, ref string, search string) (*ShowList, error) {
 		}
 		for _, item := range index.Manifests {
 			ref := Reference{Registry: reference.Registry, Repository: repo, Version: item.Name}
-			show.Items = append(show.Items, []any{item.Name, ref.String(), units.HumanSize(float64(item.Size))})
+			show.Items = append(show.Items, []any{
+				item.Name,
+				ref.String(),
+				formatSize(item.Size),
+			})
 		}
 		return show, nil
 	default:
 		return nil, errors.New("invalid reference")
 	}
+}
+
+func formatSize(size int64) string {
+	if size == 0 {
+		return "-"
+	}
+	return units.HumanSize(float64(size))
 }

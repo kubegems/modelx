@@ -32,11 +32,11 @@ func (c Client) Pull(ctx context.Context, repo string, version string, into stri
 	if err != nil {
 		return err
 	}
-	return c.PullBlobs(ctx, repo, into, append(manifest.Blobs, manifest.Config), false)
+	return c.PullBlobs(ctx, repo, into, append(manifest.Blobs, manifest.Config), true)
 }
 
 func (c Client) PullBlobs(ctx context.Context, repo string, basedir string, blobs []types.Descriptor, usecache bool) error {
-	mb := progress.NewMuiltiBar(os.Stdout, 40)
+	mb := progress.NewMuiltiBar(os.Stdout, 40, PullPushConcurrency)
 	go mb.Run(ctx)
 
 	for _, blob := range blobs {
@@ -48,39 +48,17 @@ func (c Client) PullBlobs(ctx context.Context, repo string, basedir string, blob
 	return mb.Wait()
 }
 
-func checkLocalBlob(ctx context.Context, dir string, desc types.Descriptor) (bool, error) {
-	localfilename := filepath.Join(dir, desc.Name)
-
-	fi, err := os.Stat(localfilename)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, err
+func (c Client) PullBlob(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar, usecache bool) error {
+	switch desc.MediaType {
+	case MediaTypeModelDirectoryTarGz:
+		return c.pullDirectory(ctx, repo, desc, basedir, bar, usecache)
+	case MediaTypeModelFile:
+		return c.pullFile(ctx, repo, desc, basedir, bar)
+	case MediaTypeModelConfigYaml:
+		return c.pullConfig(ctx, repo, desc, basedir, bar)
+	default:
+		return fmt.Errorf("unsupported media type %s", desc.MediaType)
 	}
-	if fi.IsDir() {
-		digest, err := TGZ(ctx, localfilename, "")
-		if err != nil {
-			return false, err
-		}
-		if digest.String() == desc.Digest.String() {
-			return true, nil
-		}
-		return false, nil
-	}
-
-	// file exists, check hash
-	if f, err := os.Open(localfilename); err == nil {
-		defer f.Close()
-		digest, err := digest.FromReader(f)
-		if err != nil {
-			return false, err
-		}
-		if digest.String() == desc.Digest.String() {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func OpenWriteFile(filename string, perm os.FileMode) (*os.File, error) {
@@ -125,26 +103,13 @@ func WriteToFile(filename string, src io.Reader, perm os.FileMode) error {
 	return err
 }
 
-func (c Client) PullBlob(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar, usecache bool) error {
-	switch desc.MediaType {
-	case MediaTypeModelDirectoryTarGz:
-		return c.pullDirectory(ctx, repo, desc, basedir, bar, usecache)
-	case MediaTypeModelFile:
-		return c.pullFile(ctx, repo, desc, basedir, bar)
-	case MediaTypeModelConfigYaml:
-		return c.pullConfig(ctx, repo, desc, basedir, bar)
-	default:
-		return fmt.Errorf("unsupported media type %s", desc.MediaType)
-	}
-}
-
 func (c Client) pullConfig(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar) error {
 	return c.pullFile(ctx, repo, desc, basedir, bar)
 }
 
 func (c Client) pullFile(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar) error {
 	// check hash
-	bar.SetStatus(desc.Name, "checking")
+	bar.SetNameStatus(desc.Name, "checking")
 	filename := filepath.Join(basedir, desc.Name)
 	if f, err := os.Open(filename); err == nil {
 		digest, err := digest.FromReader(f)
@@ -153,7 +118,7 @@ func (c Client) pullFile(ctx context.Context, repo string, desc types.Descriptor
 		}
 		if digest.String() == desc.Digest.String() {
 			bar.SetProgress(desc.Size, desc.Size)
-			bar.SetStatus(desc.Digest.Hex()[:8], "already exists")
+			bar.SetNameStatus(desc.Digest.Hex()[:8], "already exists")
 			return nil
 		}
 		_ = f.Close()
@@ -169,19 +134,23 @@ func (c Client) pullFile(ctx context.Context, repo string, desc types.Descriptor
 	if desc.Digest == EmptyFileDigiest {
 		return nil
 	}
-	w := bar.WrapWriter(f, desc.Digest.Hex()[:8], desc.Size, "downloading", "done", "failed")
-	return c.Remote.GetBlobContent(ctx, repo, desc.Digest, w)
+	w := bar.WrapWriter(f, desc.Digest.Hex()[:8], desc.Size, "downloading", "failed")
+	if err := c.Remote.GetBlobContent(ctx, repo, desc.Digest, w); err != nil {
+		return err
+	}
+	bar.SetStatus("done")
+	return nil
 }
 
 func (c Client) pullDirectory(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar, useCache bool) error {
 	// check hash
-	bar.SetStatus(desc.Name, "checking")
+	bar.SetNameStatus(desc.Name, "checking")
 	digest, err := TGZ(ctx, filepath.Join(basedir, desc.Name), "")
 	if err != nil {
 		return err
 	}
 	if digest.String() == desc.Digest.String() {
-		bar.SetStatus(desc.Digest.Hex()[:8], "already exists")
+		bar.SetNameStatus(desc.Digest.Hex()[:8], "already exists")
 		return nil
 	}
 
@@ -192,8 +161,8 @@ func (c Client) pullDirectory(ctx context.Context, repo string, desc types.Descr
 	eg, ctx := errgroup.WithContext(ctx)
 	// download
 	eg.Go(func() error {
-		pipew2 := bar.WrapWriter(pipew, desc.Digest.Hex()[:8], desc.Size, "downloading", "done", "failed")
-		return c.Remote.GetBlobContent(ctx, repo, desc.Digest, pipew2)
+		w := bar.WrapWriter(pipew, desc.Digest.Hex()[:8], desc.Size, "downloading", "failed")
+		return c.Remote.GetBlobContent(ctx, repo, desc.Digest, w)
 	})
 	// extract
 	eg.Go(func() error {
@@ -207,14 +176,13 @@ func (c Client) pullDirectory(ctx context.Context, repo string, desc types.Descr
 				return err
 			}
 			defer f.Close()
-
-			fi, err := os.Stat(cache)
-			if err != nil {
-				return err
-			}
-			src = bar.WrapReader(f, desc.Digest.Hex()[:8], fi.Size(), "extracting", "done", "failed")
+			src = f
 		}
-		return UnTGZ(ctx, filepath.Join(basedir, desc.Name), src)
+		if err := UnTGZ(ctx, filepath.Join(basedir, desc.Name), src); err != nil {
+			return err
+		}
+		bar.SetStatus("done")
+		return nil
 	})
 	return eg.Wait()
 }

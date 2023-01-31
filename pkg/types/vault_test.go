@@ -7,41 +7,28 @@ import (
 )
 
 func TestVaultBlobMeta_ToURL(t *testing.T) {
-	type fields struct {
-		ServiceHost    string
-		ProjectAddress string
-		AccessGrant    string
-		AssetID        *big.Int
-		Username       string
-	}
 	tests := []struct {
 		name    string
-		fields  fields
+		fields  VaultBlobMeta
 		want    string
 		wantErr bool
 	}{
 		{
 			name: "default",
-			fields: fields{
-				ServiceHost:    "example.com",
+			fields: VaultBlobMeta{
+				ServiceUrl:     "example.com",
 				ProjectAddress: "0x1234567890abcdef",
 				AccessGrant:    "1234567890",
 				AssetID:        big.NewInt(1),
 				Username:       "anonymous",
+				File:           "blob/sha256:123456",
 			},
-			want: "idoe://example.com/0x1234567890abcdef/1?access-grant=1234567890&username=anonymous",
+			want: "idoe://example.com?access-grant=1234567890&asset-id=1&file=blob%2Fsha256%3A123456&project-address=0x1234567890abcdef&username=anonymous",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			u := VaultBlobMeta{
-				ServiceUrl:     tt.fields.ServiceHost,
-				ProjectAddress: tt.fields.ProjectAddress,
-				AccessGrant:    tt.fields.AccessGrant,
-				AssetID:        tt.fields.AssetID,
-				Username:       tt.fields.Username,
-			}
-			got, err := u.ToURL()
+			got, err := tt.fields.ToURL()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("VaultBlobMeta.ToURL() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -66,14 +53,15 @@ func TestParseVaultURL(t *testing.T) {
 		{
 			name: "default",
 			args: args{
-				in: "idoe://example.com/0x1234567890abcdef/1?access-grant=1234567890&username=anonymous",
+				in: "idoes://example.com?access-grant=1234567890&asset-id=1&file=blob%2Fsha256%3A123456&project-address=0x1234567890abcdef&username=anonymous",
 			},
 			want: &VaultBlobMeta{
-				ServiceUrl:     "example.com",
+				ServiceUrl:     "https://example.com",
 				ProjectAddress: "0x1234567890abcdef",
 				AccessGrant:    "1234567890",
 				AssetID:        big.NewInt(1),
 				Username:       "anonymous",
+				File:           "blob/sha256:123456",
 			},
 		},
 	}

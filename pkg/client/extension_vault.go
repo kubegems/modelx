@@ -70,7 +70,7 @@ func (e *IdoeExt) Download(ctx context.Context, location *url.URL, into io.Write
 	return vault.DownloadAssetRaw(ctx, wallet, grant, assetmeta.ProjectAddress, assetmeta.AssetID, assetmeta.File, into)
 }
 
-func (e *IdoeExt) Upload(ctx context.Context, location *url.URL, blob *BlobContent) error {
+func (e *IdoeExt) Upload(ctx context.Context, location *url.URL, blob DescriptorWithContent) error {
 	assetmeta, err := types.ParseVaultURL(location.String())
 	if err != nil {
 		return err
@@ -87,12 +87,17 @@ func (e *IdoeExt) Upload(ctx context.Context, location *url.URL, blob *BlobConte
 	if err != nil {
 		return err
 	}
-	return vault.UploadAssetRaw(ctx,
+	content, err := blob.GetContent()
+	if err != nil {
+		return err
+	}
+	return vault.UploadAssetRawWithHash(ctx,
 		wallet,
 		grant,
 		assetmeta.ProjectAddress,
 		assetmeta.AssetID,
 		assetmeta.File,
-		blob.Content,
+		content,
+		[]byte(blob.Digest.Hex()),
 	)
 }

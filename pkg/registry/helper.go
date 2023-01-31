@@ -7,8 +7,10 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/go-logr/logr"
 	apierr "kubegems.io/modelx/pkg/errors"
 )
 
@@ -86,5 +88,22 @@ func NewOIDCAuthFilter(ctx context.Context, issuer string, next http.Handler) ht
 		}
 		r.WithContext(context.WithValue(r.Context(), contextUsernameKey{}, idtoken.Subject))
 		next.ServeHTTP(w, r)
+	})
+}
+
+func LoggingFilter(logger logr.Logger, h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		from := time.Now()
+
+		h.ServeHTTP(w, r)
+
+		cost := time.Since(from)
+		logger.Info("http",
+			"method", r.Method,
+			"path", r.RequestURI,
+			"cost", cost,
+			"proto", r.Proto,
+			"ua", r.UserAgent(),
+		)
 	})
 }

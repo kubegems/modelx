@@ -24,6 +24,10 @@ func (s *Registry) route() http.Handler {
 	mux.Methods("GET").Path("/").HandlerFunc(s.GetGlobalIndex)
 	// repository
 	repository := mux.PathPrefix("/{name:" + NameRegexp + "}").Subrouter()
+
+	// gc
+	repository.Methods("POST").Path("/garbage-collect").HandlerFunc(s.GarbageCollect)
+
 	// index
 	repository.Methods("GET").Path("/index").HandlerFunc(s.GetIndex)
 	repository.Methods("DELETE").Path("/index").HandlerFunc(s.DeleteIndex)

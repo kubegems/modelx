@@ -398,3 +398,28 @@ func (m *FSRegistryStore) PutBlob(ctx context.Context, repository string, digest
 		}
 	}
 }
+
+func (m *FSRegistryStore) ListBlobs(ctx context.Context, repository string) ([]digest.Digest, error) {
+	prefix := BlobDigestPath(repository, "")
+	metas, err := m.FS.List(ctx, prefix, true)
+	if err != nil {
+		return nil, err
+	}
+	digests := make([]digest.Digest, len(metas))
+	for _, meta := range metas {
+		algo, hash := path.Split(meta.Name)
+		digests = append(digests, digest.FromString(algo+":"+hash))
+	}
+	return nil, nil
+}
+
+func (m *FSRegistryStore) DeleteBlob(ctx context.Context, repository string, digest digest.Digest) error {
+	path := BlobDigestPath(repository, digest)
+	if err := m.FS.Remove(ctx, path, false); err != nil {
+		if IsS3StorageNotFound(err) {
+			return nil
+		}
+		return errors.NewInternalError(err)
+	}
+	return nil
+}

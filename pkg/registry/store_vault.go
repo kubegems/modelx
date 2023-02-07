@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"math/big"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/opencontainers/go-digest"
@@ -155,6 +157,38 @@ func (s *VaultRegistryStore) ExistsBlob(ctx context.Context, repository string, 
 		return false, err
 	}
 	return s.VaultClient.HasAssetFile(ctx, assetid, BlobDigestPath("", digest))
+}
+
+func (s *VaultRegistryStore) ListBlobs(ctx context.Context, repository string) ([]digest.Digest, error) {
+	assetid, err := s.getAssetID(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	prefix := BlobDigestPath("", "")
+	rawfiles, err := s.VaultClient.ListAssetFile(ctx, assetid, prefix)
+	if err != nil {
+		return nil, err
+	}
+	digests := make([]digest.Digest, len(rawfiles))
+	for i := range rawfiles {
+		digests[i] = extractDigestFromPath(rawfiles[i].Name, prefix)
+	}
+	return digests, nil
+}
+
+func extractDigestFromPath(p string, prefix string) digest.Digest {
+	p = strings.TrimPrefix(p, prefix+"/")
+	algo, hash := path.Split(p)
+	algo = path.Clean(algo)
+	return digest.Digest(algo + ":" + hash)
+}
+
+func (s *VaultRegistryStore) DeleteBlob(ctx context.Context, repository string, digest digest.Digest) error {
+	assetid, err := s.getAssetID(ctx, repository)
+	if err != nil {
+		return err
+	}
+	return s.VaultClient.RemoveAssetFile(ctx, assetid, BlobDigestPath("", digest))
 }
 
 func (s *VaultRegistryStore) getOrCreateAssetID(ctx context.Context, repository string) (*big.Int, error) {

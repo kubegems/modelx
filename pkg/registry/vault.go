@@ -252,13 +252,19 @@ func (s *VaultClient) GetAssetFile(ctx context.Context, assetid *big.Int, key st
 }
 
 func (s *VaultClient) RemoveAssetFile(ctx context.Context, assetid *big.Int, key string) error {
-	return s.vault.DeleteAssetRaw(ctx,
+	if err := s.vault.DeleteAssetRaw(ctx,
 		s.ServiceWallet(),
 		nil, // access grant
 		s.ServiceProjectAddress(),
 		assetid,
 		key,
-	)
+	); err != nil {
+		if IsS3StorageNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *VaultClient) GenerateAccessGrant(ctx context.Context, assetid *big.Int, allowread, allowwrite bool) (string, error) {

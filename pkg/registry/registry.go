@@ -3,10 +3,8 @@ package registry
 import (
 	"context"
 	"encoding/json"
-	stderrors "errors"
 	"io"
 	"net/http"
-	"path"
 	"strconv"
 	"strings"
 
@@ -16,57 +14,6 @@ import (
 	"kubegems.io/modelx/pkg/errors"
 	"kubegems.io/modelx/pkg/types"
 )
-
-var ErrRegistryStoreNotFound = stderrors.New("not found")
-
-type BlobContent struct {
-	ContentType     string
-	ContentLength   int64
-	ContentEncoding string
-	Content         io.ReadCloser
-}
-
-type BlobResponse struct {
-	RedirectLocation string
-	Content          *BlobContent
-}
-
-type RegistryStore interface {
-	GetGlobalIndex(ctx context.Context, search string) (types.Index, error)
-
-	GetIndex(ctx context.Context, repository string, search string) (types.Index, error)
-	RemoveIndex(ctx context.Context, repository string) error
-
-	ExistsManifest(ctx context.Context, repository string, reference string) (bool, error)
-	GetManifest(ctx context.Context, repository string, reference string) (*types.Manifest, error)
-	PutManifest(ctx context.Context, repository string, reference string, contentType string, manifest types.Manifest) error
-	DeleteManifest(ctx context.Context, repository string, reference string) error
-
-	GetBlob(ctx context.Context, repository string, digest digest.Digest) (*BlobResponse, error)
-	PutBlob(ctx context.Context, repository string, digest digest.Digest, content BlobContent) (*BlobResponse, error)
-	ExistsBlob(ctx context.Context, repository string, digest digest.Digest) (bool, error)
-}
-
-func BlobDigestPath(repository string, d digest.Digest) string {
-	return path.Join(repository, "blobs", d.Algorithm().String(), d.Hex())
-}
-
-func IndexPath(repository string) string {
-	return path.Join(repository, RegistryIndexFileName)
-}
-
-func ManifestPath(repository string, reference string) string {
-	return path.Join(repository, "manifests", reference)
-}
-
-func SplitManifestPath(in string) (string, string) {
-	in = strings.TrimPrefix(in, "manifests")
-	return path.Split(in)
-}
-
-func IsRegistryStoreNotNotFound(err error) bool {
-	return stderrors.Is(err, ErrRegistryStoreNotFound)
-}
 
 type Registry struct {
 	Store RegistryStore
@@ -247,6 +194,16 @@ func (s *Registry) GetBlob(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	})
+}
+
+func (s *Registry) GarbageCollect(w http.ResponseWriter, r *http.Request) {
+	name, _ := GetRepositoryReference(r)
+	result, err := GCBlobs(r.Context(), s.Store, name)
+	if err != nil {
+		ResponseError(w, errors.NewInternalError(err))
+		return
+	}
+	ResponseOK(w, result)
 }
 
 func BlobDigestFun(w http.ResponseWriter, r *http.Request, fun func(ctx context.Context, repository string, digest digest.Digest)) {

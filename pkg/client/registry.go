@@ -19,18 +19,12 @@ func NewRegistryClient(addr string, auth string) *RegistryClient {
 	return &RegistryClient{
 		Registry:      addr,
 		Authorization: auth,
-		httpcli: &http.Client{
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse // do not follow redirect
-			},
-		},
 	}
 }
 
 type RegistryClient struct {
 	Registry      string
 	Authorization string
-	httpcli       *http.Client
 }
 
 func (t *RegistryClient) GetManifest(ctx context.Context, repository string, version string) (*types.Manifest, error) {

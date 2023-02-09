@@ -113,7 +113,14 @@ func (t *RegistryClient) extrequest(ctx context.Context, method, url string, hea
 	req.Header.Set("User-Agent", UserAgent)
 	req.Body = content
 	req.ContentLength = contentlen
-	resp, err := t.httpcli.Do(req)
+
+	norediretccli := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // do not follow redirect
+		},
+	}
+
+	resp, err := norediretccli.Do(req)
 	if err != nil {
 		return nil, err
 	}

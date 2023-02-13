@@ -34,7 +34,7 @@ PUSH?=false
 
 ##@ All
 
-all: build image ## build all
+all: build-all image-all ## build all
 
 ##@ General
 
@@ -55,32 +55,34 @@ help: ## Display this help.
 check: linter ## Static code check.
 	${LINTER} run ./...
 
+preset:
+	test -f ~/.netrc || echo "machine ${GITLAB_HOST} login ${GITLAB_USER} password ${GITLAB_TOKEN} " > ~/.netrc
+	go env -w GOPRIVATE=${GITLAB_HOST}
+
+BINARIES = modelx modelxd modelxdl
 define build
-	@echo "Building ${1}/${2}"
-	@GOOS=${1} GOARCH=$(2) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/modelx-$(1)-$(2) ${GOPACKAGE}/cmd/modelx
-	@GOOS=${1} GOARCH=$(2) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/modelxd-$(1)-$(2) ${GOPACKAGE}/cmd/modelxd
-	@GOOS=${1} GOARCH=$(2) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/modelxdl-$(1)-$(2) ${GOPACKAGE}/cmd/modelxdl
+	$(foreach n,$(subst  , , ${BINARIES}),
+		@echo "Building $(n)-${1}-${2}"
+		@GOOS=${1} GOARCH=$(2) CGO_ENABLED=1 CC=$(3) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/$(n)-$(1)-$(2) ${GOPACKAGE}/cmd/$(n)
+	)
 endef
 
 ##@ Build
 OS:=$(shell go env GOOS)
 ARCH:=$(shell go env GOARCH)
-build: ## Build binaries.
+build: preset ## Build binaries.
 	$(call build,${OS},${ARCH})
 	@cp ${BIN_DIR}/modelx-${OS}-${ARCH} ${BIN_DIR}/modelx
 
-build-all:
+build-all: preset
 	$(call build,linux,amd64)
-	$(call build,linux,arm64)
-	$(call build,darwin,amd64)
-	$(call build,darwin,arm64)
-	$(call build,windows,amd64)
+	$(call build,linux,arm64,aarch64-linux-gnu-gcc)
 
 image:
 	docker buildx build --platform=${OS}/${ARCH} --tag ${IMG} --push=${PUSH} -f Dockerfile ${BIN_DIR}
 	docker buildx build --platform=${OS}/${ARCH} --tag ${DLIMG} --push=${PUSH} -f Dockerfile.dl ${BIN_DIR}
 
-PLATFORM?=linux/amd64,linux/arm64,darwin/arm64,darwin/amd64,windows/amd64
+PLATFORM?=linux/amd64,linux/arm64
 image-all: ## Build container image.
 	docker buildx build --platform=${PLATFORM} --tag ${IMG} --push=${PUSH} -f Dockerfile ${BIN_DIR}
 	docker buildx build --platform=${PLATFORM} --tag ${DLIMG} --push=${PUSH} -f Dockerfile.dl ${BIN_DIR}

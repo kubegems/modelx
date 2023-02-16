@@ -54,7 +54,7 @@ type VaultClient struct {
 }
 
 func NewVaultClient(ctx context.Context, options *VaultOptions) (*VaultClient, error) {
-	vault, err := sdkvault.NewVault(ctx, options.Address)
+	vault, err := sdkvault.NewVault(ctx, options.Address, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -224,17 +224,7 @@ func (s *VaultClient) ListAssetFile(ctx context.Context, assetid *big.Int, prefi
 }
 
 func (s *VaultClient) HasAssetFile(ctx context.Context, assetid *big.Int, key string) (bool, error) {
-	// TODO: use vault.HasAssetRaw(key) if possible
-	list, err := s.vault.ListAssetRaw(ctx, s.ServiceProjectAddress(), assetid)
-	if err != nil {
-		return false, err
-	}
-	for _, item := range list.Items {
-		if item.Name == key {
-			return true, nil
-		}
-	}
-	return false, nil
+	return s.vault.AssetHasRaw(ctx, s.ServiceProjectAddress(), assetid, key)
 }
 
 func (s *VaultClient) GetAssetFile(ctx context.Context, assetid *big.Int, key string) ([]byte, error) {

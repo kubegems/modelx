@@ -28,7 +28,6 @@ ldflags+=-w -s
 ldflags+=-X '${GOPACKAGE}/pkg/version.gitVersion=${GIT_VERSION}'
 ldflags+=-X '${GOPACKAGE}/pkg/version.gitCommit=${GIT_COMMIT}'
 ldflags+=-X '${GOPACKAGE}/pkg/version.buildDate=${BUILD_DATE}'
-ldflags+=-extldflags=-static
 
 PUSH?=false
 
@@ -56,14 +55,14 @@ check: linter ## Static code check.
 	${LINTER} run ./...
 
 preset:
-	test -f ~/.netrc || echo "machine ${GITLAB_HOST} login ${GITLAB_USER} password ${GITLAB_TOKEN} " > ~/.netrc
-	go env -w GOPRIVATE=${GITLAB_HOST}
+	[ -z ${GITLAB_HOST} ] || go env -w GOPRIVATE=${GITLAB_HOST}
+	[ -f ~/.netrc ] || echo "machine ${GITLAB_HOST} login ${GITLAB_USER} password ${GITLAB_TOKEN} " > ~/.netrc
 
 BINARIES = modelx modelxd modelxdl
 define build
 	$(foreach n,$(subst  , , ${BINARIES}),
 		@echo "Building $(n)-${1}-${2}"
-		@GOOS=${1} GOARCH=$(2) CGO_ENABLED=1 CC=$(3) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/$(n)-$(1)-$(2) ${GOPACKAGE}/cmd/$(n)
+		@GOOS=${1} GOARCH=$(2) CGO_ENABLED=0 go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/$(n)-$(1)-$(2) ${GOPACKAGE}/cmd/$(n)
 	)
 endef
 
@@ -76,7 +75,10 @@ build: preset ## Build binaries.
 
 build-all: preset
 	$(call build,linux,amd64)
-	$(call build,linux,arm64,aarch64-linux-gnu-gcc)
+	$(call build,linux,arm64)
+	$(call build,darwin,amd64)
+	$(call build,darwin,arm64)
+	$(call build,windows,amd64)
 
 image:
 	docker buildx build --platform=${OS}/${ARCH} --tag ${IMG} --push=${PUSH} -f Dockerfile ${BIN_DIR}

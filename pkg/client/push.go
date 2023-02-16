@@ -173,7 +173,7 @@ func (c Client) PushBlob(ctx context.Context, repo string, desc DescriptorWithCo
 			if err != nil {
 				return nil, err
 			}
-			content = p.WrapReader(content, desc.Size, "pushing", "failed")
+			content = p.WrapReader(content, desc.Digest.Hex()[:8], desc.Size, "pushing", "failed")
 			return content, nil
 		},
 	}

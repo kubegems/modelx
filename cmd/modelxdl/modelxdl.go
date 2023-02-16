@@ -95,5 +95,5 @@ func Run(ctx context.Context, uri string, dest string) error {
 		files = append(files, blob.Name)
 	}
 	fmt.Printf("Pulling files %v\n into %s", files, dest)
-	return cli.PullBlobs(ctx, ref.Repository, dest, pullblobs, false)
+	return cli.PullBlobs(ctx, ref.Repository, dest, pullblobs)
 }

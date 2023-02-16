@@ -94,8 +94,9 @@ func (b *Bar) Increment(n int64) {
 	b.Notify()
 }
 
-func (b *Bar) WrapReader(rc io.ReadCloser, total int64, initStatus, failedStatus string) io.ReadCloser {
+func (b *Bar) WrapReader(rc io.ReadCloser, name string, total int64, initStatus, failedStatus string) io.ReadCloser {
 	b.Total = total
+	b.Name = name
 	b.Status = initStatus
 	b.Used = 0 // reset
 	defer b.Notify()

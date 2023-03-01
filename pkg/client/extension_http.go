@@ -30,7 +30,12 @@ func HTTPUpload(ctx context.Context, location *url.URL, blob DescriptorWithConte
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest("POST", location.String(), content)
+	// s3 upload use PUT
+	method := http.MethodPost
+	if location.Query().Has("X-Amz-Credential") {
+		method = http.MethodPut
+	}
+	req, err := http.NewRequest(method, location.String(), content)
 	if err != nil {
 		return err
 	}

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -22,7 +21,7 @@ func NewInitCmd() *cobra.Command {
 		`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+			ctx, cancel := BaseContext()
 			defer cancel()
 			if len(args) == 0 {
 				return errors.New("at least one argument is required")

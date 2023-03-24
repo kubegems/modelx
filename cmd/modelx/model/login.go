@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"os/signal"
 
 	"github.com/spf13/cobra"
 	"kubegems.io/modelx/cmd/modelx/repo"
@@ -34,7 +32,7 @@ func NewLoginCmd() *cobra.Command {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+			ctx, cancel := BaseContext()
 			defer cancel()
 			if len(args) == 0 {
 				return errors.New("at least one argument is required")

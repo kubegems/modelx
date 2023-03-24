@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/signal"
 	"strings"
 	"time"
 
@@ -48,7 +47,7 @@ func NewListCmd() *cobra.Command {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+			ctx, cancel := BaseContext()
 			defer cancel()
 			if len(args) == 0 {
 				return errors.New("at least one argument is required")

@@ -3,17 +3,14 @@ package registry
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 
 	"github.com/go-logr/logr"
-	"github.com/go-logr/stdr"
 )
 
 func Run(ctx context.Context, opts *Options) error {
-	log := stdr.NewWithOptions(log.Default(), stdr.Options{LogCaller: stdr.Error})
-	ctx = logr.NewContext(ctx, log)
+	log := logr.FromContextOrDiscard(ctx)
 	registry, err := NewRegistry(ctx, opts)
 	if err != nil {
 		return err
@@ -47,6 +44,8 @@ func Run(ctx context.Context, opts *Options) error {
 }
 
 func NewRegistry(ctx context.Context, opt *Options) (*Registry, error) {
+	log := logr.FromContextOrDiscard(ctx)
+	log.Info("prepare registry", "options", opt)
 	var registryStore RegistryStore
 	if opt.Vault.Address != "" {
 		vaultRegistrystore, err := NewVaultRegistryStore(ctx, opt.Vault)

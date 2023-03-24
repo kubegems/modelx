@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	NameRegexp      = `[a-z0-9]+(?:[._-][a-z0-9]+)*/(?:[a-z0-9]+(?:[._-][a-z0-9]+)*)`
+	NameRegexp      = `[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*/(?:[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*)`
 	ReferenceRegexp = `[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}`
 	DigestRegexp    = `[A-Za-z][A-Za-z0-9]*(?:[-_+.][A-Za-z][A-Za-z0-9]*)*[:][[:xdigit:]]{32,}`
 )

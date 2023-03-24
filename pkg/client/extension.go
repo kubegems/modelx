@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/go-logr/logr"
 	"github.com/opencontainers/go-digest"
 	"kubegems.io/modelx/pkg/errors"
 )
@@ -23,17 +24,47 @@ type Extension interface {
 }
 
 func ExtDownload(ctx context.Context, location *url.URL, into io.Writer) error {
+	log := logr.FromContextOrDiscard(ctx).WithValues("location", location.String(), "extend", location.Scheme)
 	if ext, ok := GlobalExtensions[location.Scheme]; ok {
-		return ext.Download(ctx, location, into)
+		log.Info("extend downloading blob")
+		if err := ext.Download(ctx, location, into); err != nil {
+			log.Error(err, "extend download blob failed")
+			return err
+		} else {
+			log.Info("extend download blob finished")
+			return nil
+		}
 	}
-	return HTTPDownload(ctx, location, into)
+	log.Info("http downloading blob")
+	if err := HTTPDownload(ctx, location, into); err != nil {
+		log.Error(err, "http download blob failed")
+		return err
+	} else {
+		log.Info("http download blob finished")
+		return nil
+	}
 }
 
 func ExtUpload(ctx context.Context, location *url.URL, blob DescriptorWithContent) error {
+	log := logr.FromContextOrDiscard(ctx).WithValues("location", location.String(), "extend", location.Scheme)
 	if ext, ok := GlobalExtensions[location.Scheme]; ok {
-		return ext.Upload(ctx, location, blob)
+		log.Info("extend uploading blob")
+		if err := ext.Upload(ctx, location, blob); err != nil {
+			log.Error(err, "extend upload blob failed")
+			return err
+		} else {
+			log.Info("extend upload blob finished")
+			return nil
+		}
 	}
-	return HTTPUpload(ctx, location, blob)
+	log.Info("http uploading blob")
+	if err := HTTPUpload(ctx, location, blob); err != nil {
+		log.Error(err, "http upload blob failed")
+		return err
+	} else {
+		log.Info("http upload blob finished")
+		return nil
+	}
 }
 
 type BlobContent struct {
@@ -73,6 +104,7 @@ func (t *RegistryClient) GetBlobContent(ctx context.Context, repository string, 
 }
 
 func (t *RegistryClient) UploadBlobContent(ctx context.Context, repository string, blob DescriptorWithContent) error {
+	log := logr.FromContextOrDiscard(ctx).WithValues("digest", blob.Digest.String())
 	header := map[string][]string{
 		"Content-Type": {"application/octet-stream"},
 	}
@@ -82,9 +114,10 @@ func (t *RegistryClient) UploadBlobContent(ctx context.Context, repository strin
 	if err != nil {
 		return err
 	}
-
+	log.Info("upload blob content", "size", blob.Size)
 	resp, err := t.extrequest(ctx, "PUT", path, header, blob.Size, content)
 	if err != nil {
+		log.Error(err, "upload blob content")
 		return err
 	}
 	if http.StatusMultipleChoices <= resp.StatusCode && resp.StatusCode < http.StatusBadRequest {
@@ -92,6 +125,7 @@ func (t *RegistryClient) UploadBlobContent(ctx context.Context, repository strin
 		if loc == "" {
 			return errors.NewInternalError(fmt.Errorf("no Location header found in a %s response", resp.Status))
 		}
+		log.Info("upload blob been redirected", "location", loc)
 		locau, err := url.Parse(loc)
 		if err != nil {
 			return errors.NewInternalError(fmt.Errorf("invalid location %s: %w", loc, err))

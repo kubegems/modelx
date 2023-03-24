@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/exp/slices"
 	"kubegems.io/modelx/pkg/client/progress"
@@ -153,12 +154,14 @@ func (c Client) pushFile(ctx context.Context, blobfile string, desc *types.Descr
 }
 
 func (c Client) PushBlob(ctx context.Context, repo string, desc DescriptorWithContent, p *progress.Bar) error {
+	log := logr.FromContextOrDiscard(ctx).WithValues("digest", desc.Digest)
 	if desc.Digest == EmptyFileDigiest {
 		p.SetStatus("empty")
 		return nil
 	}
 	exist, err := c.Remote.HeadBlob(ctx, repo, desc.Digest)
 	if err != nil {
+		log.Error(err, "check blob exist")
 		return err
 	}
 	if exist {

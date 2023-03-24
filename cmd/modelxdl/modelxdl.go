@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -37,7 +36,7 @@ func NewDLCmd() *cobra.Command {
 			if len(args) != 2 {
 				return fmt.Errorf("requires two arguments")
 			}
-			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+			ctx, cancel := model.BaseContext()
 			defer cancel()
 
 			// Seldon Storage Initializer accept two arguments: modelUri and modelPath

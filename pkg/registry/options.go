@@ -7,6 +7,7 @@ type Options struct {
 	Local          *LocalFSOptions
 	EnableRedirect bool
 	OIDC           *OIDCOptions
+	Vault          *VaultOptions
 }
 
 type OIDCOptions struct {
@@ -21,6 +22,7 @@ func DefaultOptions() *Options {
 		OIDC:           &OIDCOptions{},
 		Local:          NewDefaultLocalFSOptions(),
 		EnableRedirect: false, // default to false
+		Vault:          NewDefaultVaultOptions(),
 	}
 }
 

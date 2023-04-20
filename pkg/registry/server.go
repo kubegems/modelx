@@ -54,6 +54,13 @@ func NewRegistry(ctx context.Context, opt *Options) (*Registry, error) {
 		}
 		registryStore = s3store
 	}
+	if registryStore == nil && opt.Vault.Address != "" {
+		vaultRegistrystore, err := NewVaultRegistryStore(ctx, opt.Vault)
+		if err != nil {
+			return nil, err
+		}
+		registryStore = vaultRegistrystore
+	}
 	if registryStore == nil {
 		fsstore, err := NewFSRegistryStore(ctx, opt)
 		if err != nil {

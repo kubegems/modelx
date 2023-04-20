@@ -43,6 +43,9 @@ jobs:
         run: make all
         env:
           PUSH: ${{ github.event_name != 'pull_request' }}
+          GITLAB_HOST: ${{ secrets.GITLAB_HOST }}
+          GITLAB_USER: ${{ secrets.GITLAB_USER }}
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
       - name: Release
         # https://github.com/softprops/action-gh-release
         uses: softprops/action-gh-release@v1

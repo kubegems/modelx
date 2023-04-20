@@ -55,6 +55,8 @@ check: linter ## Static code check.
 	${LINTER} run ./...
 
 preset:
+	[ -z ${GITLAB_HOST} ] || go env -w GOPRIVATE=${GITLAB_HOST}
+	[ -f ~/.netrc ] || echo "machine ${GITLAB_HOST} login ${GITLAB_USER} password ${GITLAB_TOKEN} " > ~/.netrc
 
 BINARIES = modelx modelxd modelxdl
 define build

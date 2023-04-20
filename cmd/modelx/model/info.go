@@ -1,12 +1,10 @@
 package model
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"os/signal"
 
 	"github.com/spf13/cobra"
 	"kubegems.io/modelx/cmd/modelx/repo"
@@ -30,7 +28,7 @@ func NewInfoCmd() *cobra.Command {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+			ctx, cancel := BaseContext()
 			defer cancel()
 			if len(args) == 0 {
 				return errors.New("at least one argument is required")
@@ -59,10 +57,9 @@ func GetConfig(ctx context.Context, ref string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if content, _, err := cli.Remote.GetBlob(ctx, reference.Repository, manfiest.Config.Digest); err != nil {
+	into := bytes.NewBuffer(nil)
+	if err := cli.Remote.GetBlobContent(ctx, reference.Repository, manfiest.Config.Digest, into); err != nil {
 		return nil, err
-	} else {
-		defer content.Close()
-		return io.ReadAll(content)
 	}
+	return into.Bytes(), nil
 }

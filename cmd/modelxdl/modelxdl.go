@@ -1,18 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
-	"os/signal"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 	"kubegems.io/modelx/cmd/modelx/model"
 	"kubegems.io/modelx/pkg/types"
 	"kubegems.io/modelx/pkg/version"
-	"sigs.k8s.io/yaml"
 )
 
 const ErrExitCode = 1
@@ -37,7 +36,7 @@ func NewDLCmd() *cobra.Command {
 			if len(args) != 2 {
 				return fmt.Errorf("requires two arguments")
 			}
-			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+			ctx, cancel := model.BaseContext()
 			defer cancel()
 
 			// Seldon Storage Initializer accept two arguments: modelUri and modelPath
@@ -60,19 +59,14 @@ func Run(ctx context.Context, uri string, dest string) error {
 	if err != nil {
 		return err
 	}
-	content, _, err := cli.Remote.GetBlob(ctx, ref.Repository, manifest.Config.Digest)
-	if err != nil {
-		return err
-	}
-	defer content.Close()
+	into := bytes.NewBuffer(nil)
 
-	contentbytes, err := io.ReadAll(content)
-	if err != nil {
+	if err := cli.Remote.GetBlobContent(ctx, ref.Repository, manifest.Config.Digest, into); err != nil {
 		return err
 	}
 
 	config := &model.ModelConfig{}
-	if err := yaml.Unmarshal(contentbytes, config); err != nil {
+	if err := yaml.Unmarshal(into.Bytes(), config); err != nil {
 		return err
 	}
 
@@ -100,5 +94,5 @@ func Run(ctx context.Context, uri string, dest string) error {
 		files = append(files, blob.Name)
 	}
 	fmt.Printf("Pulling files %v\n into %s", files, dest)
-	return cli.PullBlobs(ctx, ref.Repository, dest, pullblobs, false)
+	return cli.PullBlobs(ctx, ref.Repository, dest, pullblobs)
 }

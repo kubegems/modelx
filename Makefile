@@ -29,10 +29,11 @@ ldflags+=-X '${GOPACKAGE}/pkg/version.gitVersion=${GIT_VERSION}'
 ldflags+=-X '${GOPACKAGE}/pkg/version.gitCommit=${GIT_COMMIT}'
 ldflags+=-X '${GOPACKAGE}/pkg/version.buildDate=${BUILD_DATE}'
 
+PUSH?=false
 
 ##@ All
 
-all: build container ## build all
+all: build-all image-all ## build all
 
 ##@ General
 
@@ -53,44 +54,38 @@ help: ## Display this help.
 check: linter ## Static code check.
 	${LINTER} run ./...
 
+preset:
+
+BINARIES = modelx modelxd modelxdl
 define build
-	@echo "Building ${1}/${2}"
-	@CGO_ENABLED=0 GOOS=${1} GOARCH=$(2) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/modelx-$(1)-$(2) ${GOPACKAGE}/cmd/modelx
-	@CGO_ENABLED=0 GOOS=${1} GOARCH=$(2) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/modelxd-$(1)-$(2) ${GOPACKAGE}/cmd/modelxd
-	@CGO_ENABLED=0 GOOS=${1} GOARCH=$(2) go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/modelxdl-$(1)-$(2) ${GOPACKAGE}/cmd/modelxdl
+	$(foreach n,$(subst  , , ${BINARIES}),
+		@echo "Building $(n)-${1}-${2}"
+		@GOOS=${1} GOARCH=$(2) CGO_ENABLED=0 go build -gcflags=all="-N -l" -ldflags="${ldflags}" -o ${BIN_DIR}/$(n)-$(1)-$(2) ${GOPACKAGE}/cmd/$(n)
+	)
 endef
 
 ##@ Build
 OS:=$(shell go env GOOS)
 ARCH:=$(shell go env GOARCH)
-build: ## Build binaries.
+build: preset ## Build binaries.
 	$(call build,${OS},${ARCH})
 	@cp ${BIN_DIR}/modelx-${OS}-${ARCH} ${BIN_DIR}/modelx
 
-build-all:
+build-all: preset
 	$(call build,linux,amd64)
 	$(call build,linux,arm64)
 	$(call build,darwin,amd64)
 	$(call build,darwin,arm64)
 	$(call build,windows,amd64)
 
-image: ## Build container image.
-ifneq (, $(shell which docker))
-	docker build -t ${IMG} .
-	docker build -t ${DLIMG} .
-else
-	buildah bud -t ${IMG} .
-	buildah bud -t ${DLIMG} .
-endif
+image:
+	docker buildx build --platform=${OS}/${ARCH} --tag ${IMG} --push=${PUSH} -f Dockerfile ${BIN_DIR}
+	docker buildx build --platform=${OS}/${ARCH} --tag ${DLIMG} --push=${PUSH} -f Dockerfile.dl ${BIN_DIR}
 
-push: ## Push docker image with the manager.
-ifneq (, $(shell which docker))
-	docker push ${IMG}
-	docker push ${DLIMG}
-else
-	buildah push ${IMG}
-	buildah push ${DLIMG}
-endif
+PLATFORM?=linux/amd64,linux/arm64
+image-all: ## Build container image.
+	docker buildx build --platform=${PLATFORM} --tag ${IMG} --push=${PUSH} -f Dockerfile ${BIN_DIR}
+	docker buildx build --platform=${PLATFORM} --tag ${DLIMG} --push=${PUSH} -f Dockerfile.dl ${BIN_DIR}
 
 helm-package:
 	helm package charts/modelx --version=${SEMVER_VERSION} --app-version=${SEMVER_VERSION} 

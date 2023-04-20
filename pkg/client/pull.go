@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -9,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/opencontainers/go-digest"
+	"golang.org/x/sync/errgroup"
 	"kubegems.io/modelx/pkg/client/progress"
 	"kubegems.io/modelx/pkg/types"
 )
@@ -32,58 +32,46 @@ func (c Client) Pull(ctx context.Context, repo string, version string, into stri
 	if err != nil {
 		return err
 	}
-	return c.PullBlobs(ctx, repo, into, append(manifest.Blobs, manifest.Config), false)
+	return c.PullBlobs(ctx, repo, into, append(manifest.Blobs, manifest.Config))
 }
 
-func (c Client) PullBlobs(ctx context.Context, repo string, basedir string, blobs []types.Descriptor, usecache bool) error {
-	mb := progress.NewMuiltiBar(os.Stdout, 40)
+func (c Client) PullBlobs(ctx context.Context, repo string, basedir string, blobs []types.Descriptor) error {
+	mb := progress.NewMuiltiBar(os.Stdout, 40, PullPushConcurrency)
 	go mb.Run(ctx)
 
 	for _, blob := range blobs {
 		blob := blob
 		mb.Go(blob.Name, "pending", func(b *progress.Bar) error {
-			return c.PullBlob(ctx, repo, blob, basedir, b, usecache)
+			return c.PullBlob(ctx, repo, blob, basedir, b)
 		})
 	}
 	return mb.Wait()
 }
 
-func checkLocalBlob(ctx context.Context, dir string, desc types.Descriptor) (bool, error) {
-	localfilename := filepath.Join(dir, desc.Name)
-
-	fi, err := os.Stat(localfilename)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, err
+func (c Client) PullBlob(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar) error {
+	switch desc.MediaType {
+	case MediaTypeModelDirectoryTarGz:
+		return c.pullDirectory(ctx, repo, desc, basedir, bar, true)
+	case MediaTypeModelFile:
+		return c.pullFile(ctx, repo, desc, basedir, bar)
+	case MediaTypeModelConfigYaml:
+		return c.pullConfig(ctx, repo, desc, basedir, bar)
+	default:
+		return fmt.Errorf("unsupported media type %s", desc.MediaType)
 	}
-	if fi.IsDir() {
-		digest, err := TGZ(ctx, localfilename, "")
-		if err != nil {
-			return false, err
-		}
-		if digest.String() == desc.Digest.String() {
-			return true, nil
-		}
-		return false, nil
-	}
-
-	// file exists, check hash
-	if f, err := os.Open(localfilename); err == nil {
-		defer f.Close()
-		digest, err := digest.FromReader(f)
-		if err != nil {
-			return false, err
-		}
-		if digest.String() == desc.Digest.String() {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
-func writeFile(filename string, src io.ReadCloser, perm os.FileMode) error {
+func OpenWriteFile(filename string, perm os.FileMode) (*os.File, error) {
+	if perm == 0 {
+		perm = 0o644
+	}
+	if err := os.MkdirAll(filepath.Dir(filename), os.ModePerm); err != nil {
+		return nil, err
+	}
+	return os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm.Perm())
+}
+
+func WriteToFile(filename string, src io.Reader, perm os.FileMode) error {
 	var f *os.File
 	var err error
 
@@ -106,23 +94,13 @@ func writeFile(filename string, src io.ReadCloser, perm os.FileMode) error {
 	}
 
 	defer f.Close()
-	defer src.Close()
+
+	if closer, ok := src.(io.Closer); ok {
+		defer closer.Close()
+	}
 
 	_, err = io.Copy(f, src)
 	return err
-}
-
-func (c Client) PullBlob(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar, usecache bool) error {
-	switch desc.MediaType {
-	case MediaTypeModelDirectoryTarGz:
-		return c.pullDirectory(ctx, repo, desc, basedir, bar, usecache)
-	case MediaTypeModelFile:
-		return c.pullFile(ctx, repo, desc, basedir, bar)
-	case MediaTypeModelConfigYaml:
-		return c.pullConfig(ctx, repo, desc, basedir, bar)
-	default:
-		return fmt.Errorf("unsupported media type %s", desc.MediaType)
-	}
 }
 
 func (c Client) pullConfig(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar) error {
@@ -131,7 +109,7 @@ func (c Client) pullConfig(ctx context.Context, repo string, desc types.Descript
 
 func (c Client) pullFile(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar) error {
 	// check hash
-	bar.SetStatus(desc.Name, "checking")
+	bar.SetNameStatus(desc.Name, "checking")
 	filename := filepath.Join(basedir, desc.Name)
 	if f, err := os.Open(filename); err == nil {
 		digest, err := digest.FromReader(f)
@@ -140,7 +118,7 @@ func (c Client) pullFile(ctx context.Context, repo string, desc types.Descriptor
 		}
 		if digest.String() == desc.Digest.String() {
 			bar.SetProgress(desc.Size, desc.Size)
-			bar.SetStatus(desc.Digest.Hex()[:8], "already exists")
+			bar.SetNameStatus(desc.Digest.Hex()[:8], "already exists")
 			return nil
 		}
 		_ = f.Close()
@@ -148,56 +126,79 @@ func (c Client) pullFile(ctx context.Context, repo string, desc types.Descriptor
 		return err
 	}
 
-	var content io.ReadCloser
-	var contentlen int64
-	if desc.Digest == EmptyFileDigiest {
-		content, contentlen = io.NopCloser(bytes.NewReader(nil)), 0
-	} else {
-		// pull
-		ctt, cttl, err := c.Remote.GetBlob(ctx, repo, desc.Digest)
-		if err != nil {
-			return err
-		}
-		content, contentlen = ctt, cttl
+	f, err := OpenWriteFile(filename, desc.Mode.Perm())
+	if err != nil {
+		return err
 	}
-	content = bar.WrapReader(content, desc.Digest.Hex()[:8], contentlen, "downloading", "done", "failed")
-	return writeFile(filename, content, desc.Mode.Perm())
+	defer f.Close()
+	if desc.Digest == EmptyFileDigiest {
+		return nil
+	}
+	w := bar.WrapWriter(f, desc.Digest.Hex()[:8], desc.Size, "downloading", "failed")
+	if err := c.Remote.GetBlobContent(ctx, repo, desc.Digest, w); err != nil {
+		return err
+	}
+	bar.SetStatus("done")
+	return nil
 }
 
 func (c Client) pullDirectory(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar, useCache bool) error {
 	// check hash
-	bar.SetStatus(desc.Name, "checking")
+	bar.SetNameStatus(desc.Name, "checking")
 	digest, err := TGZ(ctx, filepath.Join(basedir, desc.Name), "")
 	if err != nil {
 		return err
 	}
 	if digest.String() == desc.Digest.String() {
-		bar.SetStatus(desc.Digest.Hex()[:8], "already exists")
+		bar.SetNameStatus(desc.Digest.Hex()[:8], "already exists")
 		return nil
 	}
 
 	// pull to cache
-	content, contentlen, err := c.Remote.GetBlob(ctx, repo, desc.Digest)
-	if err != nil {
-		return err
-	}
-	src := bar.WrapReader(content, desc.Digest.Hex()[:8], contentlen, "downloading", "done", "failed")
 	if useCache {
 		cache := filepath.Join(basedir, ".modelx", desc.Name+".tar.gz")
-		if err := writeFile(cache, content, desc.Mode.Perm()); err != nil {
-			return err
-		}
-		f, err := os.Open(cache)
+		wf, err := OpenWriteFile(cache, desc.Mode)
 		if err != nil {
 			return err
 		}
-		defer f.Close()
+		defer wf.Close()
 
-		fi, err := os.Stat(cache)
+		w := bar.WrapWriter(wf, desc.Digest.Hex()[:8], desc.Size, "downloading", "failed")
+		if err := c.Remote.GetBlobContent(ctx, repo, desc.Digest, w); err != nil {
+			return err
+		}
+		_ = wf.Close()
+
+		// extract
+		rf, err := os.Open(cache)
 		if err != nil {
 			return err
 		}
-		src = bar.WrapReader(src, desc.Digest.Hex()[:8], fi.Size(), "extracting", "done", "failed")
+		r := bar.WrapReader(rf, desc.Digest.Hex()[:8], desc.Size, "extracting", "failed")
+		if err := UnTGZ(ctx, filepath.Join(basedir, desc.Name), r); err != nil {
+			return err
+		}
+		bar.SetStatus("done")
+		return nil
+	} else {
+		// download and extract at same time
+		piper, pipew := io.Pipe()
+		var src io.Reader = piper
+
+		eg, ctx := errgroup.WithContext(ctx)
+		// download
+		eg.Go(func() error {
+			w := bar.WrapWriter(pipew, desc.Digest.Hex()[:8], desc.Size, "downloading", "failed")
+			return c.Remote.GetBlobContent(ctx, repo, desc.Digest, w)
+		})
+		// extract
+		eg.Go(func() error {
+			if err := UnTGZ(ctx, filepath.Join(basedir, desc.Name), src); err != nil {
+				return err
+			}
+			bar.SetStatus("done")
+			return nil
+		})
+		return eg.Wait()
 	}
-	return UnTGZ(ctx, filepath.Join(basedir, desc.Name), src)
 }

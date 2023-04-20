@@ -20,6 +20,7 @@
 | HEAD   | /{repository}/{name}/blobs/{digest}  | 判断数据文件是否存在     |
 | GET    | /{repository}/{name}/blobs/{digest}  | 获取特定版本数据文件     |
 | PUT    | /{repository}/{name}/blobs/{digest}  | 上传特定版本数据文件     |
+| POST   | /{repository}/{name}/garbage-collect | 触发垃圾收集             |
 
 ## 负载转移
 

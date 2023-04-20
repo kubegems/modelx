@@ -1,6 +1,7 @@
 certs
 tmp
 .vscode
-bin
 __debug_bin
 *.tgz
+/bin
+/data

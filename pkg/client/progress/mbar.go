@@ -22,13 +22,15 @@ type MultiBar struct {
 	haschange bool
 }
 
-func NewMuiltiBar(dest io.Writer, width int) *MultiBar {
+func NewMuiltiBar(dest io.Writer, width int, concurent int) *MultiBar {
 	mb := &MultiBar{
 		width: width,
 		w:     dest,
 		eg:    &errgroup.Group{},
 	}
-	mb.eg.SetLimit(5)
+	if concurent == 0 {
+		mb.eg.SetLimit(5)
+	}
 	return mb
 }
 

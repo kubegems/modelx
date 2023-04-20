@@ -7,17 +7,10 @@ import (
 )
 
 const (
-	NameRegexp      = `[a-z0-9]+(?:[._-][a-z0-9]+)*/(?:[a-z0-9]+(?:[._-][a-z0-9]+)*)`
+	NameRegexp      = `[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*/(?:[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*)`
 	ReferenceRegexp = `[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}`
 	DigestRegexp    = `[A-Za-z][A-Za-z0-9]*(?:[-_+.][A-Za-z][A-Za-z0-9]*)*[:][[:xdigit:]]{32,}`
 )
-
-type Endpoint struct {
-	IDs      []string
-	Name     string
-	Endpoint string
-	Handler  http.HandlerFunc
-}
 
 func (s *Registry) route() http.Handler {
 	mux := mux.NewRouter()
@@ -31,6 +24,10 @@ func (s *Registry) route() http.Handler {
 	mux.Methods("GET").Path("/").HandlerFunc(s.GetGlobalIndex)
 	// repository
 	repository := mux.PathPrefix("/{name:" + NameRegexp + "}").Subrouter()
+
+	// gc
+	repository.Methods("POST").Path("/garbage-collect").HandlerFunc(s.GarbageCollect)
+
 	// index
 	repository.Methods("GET").Path("/index").HandlerFunc(s.GetIndex)
 	repository.Methods("DELETE").Path("/index").HandlerFunc(s.DeleteIndex)

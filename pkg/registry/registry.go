@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/gorilla/mux"
 	"github.com/opencontainers/go-digest"
 	"kubegems.io/modelx/pkg/errors"
@@ -15,14 +16,18 @@ import (
 )
 
 type Registry struct {
-	Manifest *RegistryStore
+	Store RegistryStore
 }
 
 func (s *Registry) HeadManifest(w http.ResponseWriter, r *http.Request) {
 	name, reference := GetRepositoryReference(r)
-	exist, err := s.Manifest.Exists(r.Context(), name, reference)
+	exist, err := s.Store.ExistsManifest(r.Context(), name, reference)
 	if err != nil {
-		ResponseError(w, err)
+		if IsRegistryStoreNotNotFound(err) {
+			w.WriteHeader(http.StatusNotFound)
+		} else {
+			ResponseError(w, err)
+		}
 		return
 	}
 	if exist {
@@ -33,12 +38,13 @@ func (s *Registry) HeadManifest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Registry) GetGlobalIndex(w http.ResponseWriter, r *http.Request) {
-	index, err := s.Manifest.GetGlobalIndex(r.Context(), r.URL.Query().Get("search"))
+	index, err := s.Store.GetGlobalIndex(r.Context(), r.URL.Query().Get("search"))
 	if err != nil {
-		if IsS3StorageNotFound(err) {
+		if IsRegistryStoreNotNotFound(err) {
 			ResponseOK(w, types.Index{})
+		} else {
+			ResponseError(w, err)
 		}
-		ResponseError(w, err)
 		return
 	}
 	ResponseOK(w, index)
@@ -46,12 +52,13 @@ func (s *Registry) GetGlobalIndex(w http.ResponseWriter, r *http.Request) {
 
 func (s *Registry) GetIndex(w http.ResponseWriter, r *http.Request) {
 	name, _ := GetRepositoryReference(r)
-	index, err := s.Manifest.GetIndex(r.Context(), name, r.URL.Query().Get("search"))
+	index, err := s.Store.GetIndex(r.Context(), name, r.URL.Query().Get("search"))
 	if err != nil {
-		if IsS3StorageNotFound(err) {
-			err = errors.NewIndexUnknownError(name)
+		if IsRegistryStoreNotNotFound(err) {
+			ResponseError(w, errors.NewIndexUnknownError(name))
+		} else {
+			ResponseError(w, err)
 		}
-		ResponseError(w, err)
 		return
 	}
 	ResponseOK(w, index)
@@ -59,11 +66,12 @@ func (s *Registry) GetIndex(w http.ResponseWriter, r *http.Request) {
 
 func (s *Registry) DeleteIndex(w http.ResponseWriter, r *http.Request) {
 	name, _ := GetRepositoryReference(r)
-	if err := s.Manifest.RemoveIndex(r.Context(), name); err != nil {
-		if IsS3StorageNotFound(err) {
-			err = errors.NewIndexUnknownError(name)
+	if err := s.Store.RemoveIndex(r.Context(), name); err != nil {
+		if IsRegistryStoreNotNotFound(err) {
+			ResponseError(w, errors.NewIndexUnknownError(name))
+		} else {
+			ResponseError(w, err)
 		}
-		ResponseError(w, err)
 		return
 	}
 	ResponseOK(w, "ok")
@@ -71,9 +79,13 @@ func (s *Registry) DeleteIndex(w http.ResponseWriter, r *http.Request) {
 
 func (s *Registry) GetManifest(w http.ResponseWriter, r *http.Request) {
 	name, reference := GetRepositoryReference(r)
-	manifest, err := s.Manifest.GetManifest(r.Context(), name, reference)
+	manifest, err := s.Store.GetManifest(r.Context(), name, reference)
 	if err != nil {
-		ResponseError(w, err)
+		if IsRegistryStoreNotNotFound(err) {
+			ResponseError(w, errors.NewManifestUnknownError(reference))
+		} else {
+			ResponseError(w, err)
+		}
 		return
 	}
 	ResponseOK(w, manifest)
@@ -87,7 +99,7 @@ func (s *Registry) PutManifest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	contenttype := r.Header.Get("Content-Type")
-	if err := s.Manifest.PutManifest(r.Context(), name, reference, contenttype, manifest); err != nil {
+	if err := s.Store.PutManifest(r.Context(), name, reference, contenttype, manifest); err != nil {
 		ResponseError(w, err)
 		return
 	}
@@ -96,8 +108,12 @@ func (s *Registry) PutManifest(w http.ResponseWriter, r *http.Request) {
 
 func (s *Registry) DeleteManifest(w http.ResponseWriter, r *http.Request) {
 	name, reference := GetRepositoryReference(r)
-	if err := s.Manifest.DeleteManifest(r.Context(), name, reference); err != nil {
-		ResponseError(w, err)
+	if err := s.Store.DeleteManifest(r.Context(), name, reference); err != nil {
+		if IsRegistryStoreNotNotFound(err) {
+			ResponseError(w, errors.NewManifestUnknownError(reference))
+		} else {
+			ResponseError(w, err)
+		}
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)
@@ -110,7 +126,7 @@ func GetRepositoryReference(r *http.Request) (string, string) {
 
 func (s *Registry) HeadBlob(w http.ResponseWriter, r *http.Request) {
 	BlobDigestFun(w, r, func(ctx context.Context, repository string, digest digest.Digest) {
-		ok, err := s.Manifest.ExistsBlob(r.Context(), repository, digest)
+		ok, err := s.Store.ExistsBlob(r.Context(), repository, digest)
 		if err != nil {
 			ResponseError(w, err)
 			return
@@ -127,18 +143,20 @@ func (s *Registry) HeadBlob(w http.ResponseWriter, r *http.Request) {
 // 如果客户端 不包含 contentLength 则返回一个 Location 后续上传至该地址
 func (s *Registry) PutBlob(w http.ResponseWriter, r *http.Request) {
 	BlobDigestFun(w, r, func(ctx context.Context, repository string, digest digest.Digest) {
+		log := logr.FromContextOrDiscard(ctx).WithValues("action", "put-blob", "repository", repository, "digest", digest.String())
 		contentType := r.Header.Get("Content-Type")
 		if contentType == "" {
 			ResponseError(w, errors.NewContentTypeInvalidError("empty"))
 			return
 		}
-		content := StorageContent{
+		content := BlobContent{
 			ContentLength: r.ContentLength,
 			ContentType:   contentType,
 			Content:       r.Body,
 		}
-		result, err := s.Manifest.PutBlob(r.Context(), repository, digest, content)
+		result, err := s.Store.PutBlob(r.Context(), repository, digest, content)
 		if err != nil {
+			log.Error(err, "store put blob")
 			ResponseError(w, err)
 			return
 		}
@@ -153,8 +171,13 @@ func (s *Registry) PutBlob(w http.ResponseWriter, r *http.Request) {
 
 func (s *Registry) GetBlob(w http.ResponseWriter, r *http.Request) {
 	BlobDigestFun(w, r, func(ctx context.Context, repository string, digest digest.Digest) {
-		result, err := s.Manifest.GetBlob(r.Context(), repository, digest)
+		log := logr.FromContextOrDiscard(ctx).WithValues("action", "get-blob", "repository", repository, "digest", digest.String())
+		result, err := s.Store.GetBlob(r.Context(), repository, digest)
 		if err != nil {
+			log.Error(err, "store get blob")
+			if IsRegistryStoreNotNotFound(err) {
+				ResponseError(w, errors.NewBlobUnknownError(digest))
+			}
 			ResponseError(w, err)
 			return
 		}
@@ -171,6 +194,16 @@ func (s *Registry) GetBlob(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	})
+}
+
+func (s *Registry) GarbageCollect(w http.ResponseWriter, r *http.Request) {
+	name, _ := GetRepositoryReference(r)
+	result, err := GCBlobs(r.Context(), s.Store, name)
+	if err != nil {
+		ResponseError(w, errors.NewInternalError(err))
+		return
+	}
+	ResponseOK(w, result)
 }
 
 func BlobDigestFun(w http.ResponseWriter, r *http.Request, fun func(ctx context.Context, repository string, digest digest.Digest)) {

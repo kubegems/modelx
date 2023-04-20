@@ -7,13 +7,11 @@ import (
 )
 
 type Client struct {
-	Remote RegistryClient
+	Remote *RegistryClient
 }
 
 func NewClient(registry string, auth string) *Client {
-	return &Client{
-		Remote: RegistryClient{Registry: registry, Authorization: auth},
-	}
+	return &Client{Remote: NewRegistryClient(registry, auth)}
 }
 
 func (c Client) Ping(ctx context.Context) error {

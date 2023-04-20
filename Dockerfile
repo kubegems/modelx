@@ -1,5 +1,7 @@
+# syntax=docker/dockerfile:1
 FROM alpine
-ENV OS=linux ARCH=amd64
-COPY bin/modelxd-linux-amd64 /app/
+# TARGETOS TARGETARCH already set by '--platform'
+ARG TARGETOS TARGETARCH 
+COPY modelxd-${TARGETOS}-${TARGETARCH} /app/modelxd
 WORKDIR /app
-ENTRYPOINT ["/app/modelxd-linux-amd64"]
+ENTRYPOINT ["/app/modelxd"]

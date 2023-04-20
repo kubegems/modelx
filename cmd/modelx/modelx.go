@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/tls"
+	"net/http"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -18,10 +20,19 @@ func main() {
 }
 
 func NewModelxCmd() *cobra.Command {
+	insecureSkipVerify := false
 	cmd := model.NewModelxCmd()
 	cmd.AddCommand(
 		repo.NewRepoCmd(),
 		completion.CompletionCmd,
 	)
+	cmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		if insecureSkipVerify {
+			http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{
+				InsecureSkipVerify: true,
+			}
+		}
+	}
+	cmd.PersistentFlags().BoolVarP(&insecureSkipVerify, "insecure", "", insecureSkipVerify, "tls insecure skip verify")
 	return cmd
 }

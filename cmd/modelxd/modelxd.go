@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 
+	"github.com/go-logr/logr"
+	"github.com/go-logr/stdr"
 	"github.com/spf13/cobra"
 	"kubegems.io/modelx/pkg/registry"
 	"kubegems.io/modelx/pkg/version"
@@ -29,6 +32,10 @@ func NewRegistryCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 			defer cancel()
+
+			log.SetFlags(log.LstdFlags | log.Lshortfile)
+			ctx = logr.NewContext(ctx, stdr.NewWithOptions(log.Default(), stdr.Options{LogCaller: stdr.Error}))
+
 			return registry.Run(ctx, options)
 		},
 	}

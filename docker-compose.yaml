@@ -27,7 +27,6 @@ services:
     ports:
       - "9000:9000"
     environment:
-    environment:
       - MINIO_ACCESS_KEY=EofgzWDUh6
       - MINIO_SECRET_KEY=iVPDZCN4rVpxQB1Skp6foQMWOV8IHVM4
     command: server  /data

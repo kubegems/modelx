@@ -10,12 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -25,61 +20,36 @@ import (
 
 const RegistryIndexFileName = "index.json"
 
-type S3Options struct {
-	URL           string        `json:"url,omitempty"`
-	Region        string        `json:"region,omitempty"`
-	Buket         string        `json:"buket,omitempty"`
-	AccessKey     string        `json:"accessKey,omitempty"`
-	SecretKey     string        `json:"secretKey,omitempty"`
-	PresignExpire time.Duration `json:"presignExpire,omitempty"`
-}
-
-func NewDefaultS3Options() *S3Options {
-	return &S3Options{
-		Buket:         "registry",
-		URL:           "https://s3.amazonaws.com",
-		AccessKey:     "",
-		SecretKey:     "",
-		PresignExpire: time.Hour,
-		Region:        "",
-	}
-}
-
 type FSRegistryStore struct {
 	FS             FSProvider
 	EnableRedirect bool
 }
 
-func NewFSRegistryStore(ctx context.Context, s3options *S3Options, enableredirect bool) (*FSRegistryStore, error) {
-	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(s3options.AccessKey, s3options.SecretKey, ""),
-		),
-		config.WithRegion(s3options.Region),
-		config.WithEndpointResolverWithOptions(
-			aws.EndpointResolverWithOptionsFunc(
-				func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-					return aws.Endpoint{URL: s3options.URL}, nil
-				},
-			),
-		),
-	)
-	if err != nil {
-		return nil, err
+func NewFSRegistryStore(ctx context.Context, options *Options) (*FSRegistryStore, error) {
+	var fs FSProvider
+	if fs == nil && options.S3.URL != "" {
+		s3fs, err := NewS3FSProvider(ctx, options.S3)
+		if err != nil {
+			return nil, err
+		}
+		fs = s3fs
 	}
-	s3cli := s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.UsePathStyle = true
-	})
-	storage := &S3StorageProvider{
-		Bucket:  s3options.Buket,
-		Client:  s3cli,
-		Expire:  s3options.PresignExpire,
-		Prefix:  "registry",
-		PreSign: s3.NewPresignClient(s3cli),
+	if fs == nil && options.Local.Basepath != "" {
+		if options.EnableRedirect {
+			return nil, errors.NewInternalError(fmt.Errorf("local storage does not support redirect"))
+		}
+		localfs, err := NewLocalFSProvider(options.Local)
+		if err != nil {
+			return nil, err
+		}
+		fs = localfs
+	}
+	if fs == nil {
+		return nil, errors.NewInternalError(fmt.Errorf("no storage provider is configured"))
 	}
 	store := &FSRegistryStore{
-		FS:             storage,
-		EnableRedirect: enableredirect,
+		FS:             fs,
+		EnableRedirect: options.EnableRedirect,
 	}
 	if err := store.RefreshGlobalIndex(ctx); err != nil {
 		return nil, err

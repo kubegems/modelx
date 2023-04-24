@@ -47,8 +47,8 @@ func NewRegistry(ctx context.Context, opt *Options) (*Registry, error) {
 	log := logr.FromContextOrDiscard(ctx)
 	log.Info("prepare registry", "options", opt)
 	var registryStore RegistryStore
-	if registryStore == nil && opt.S3.URL != "" {
-		fsstore, err := NewFSRegistryStore(ctx, opt.S3, opt.EnableRedirect)
+	if registryStore == nil {
+		fsstore, err := NewFSRegistryStore(ctx, opt)
 		if err != nil {
 			return nil, err
 		}

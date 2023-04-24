@@ -4,6 +4,7 @@ type Options struct {
 	Listen         string
 	TLS            *TLSOptions
 	S3             *S3Options
+	Local          *LocalFSOptions
 	EnableRedirect bool
 	OIDC           *OIDCOptions
 }
@@ -14,10 +15,12 @@ type OIDCOptions struct {
 
 func DefaultOptions() *Options {
 	return &Options{
-		Listen: ":8080",
-		TLS:    &TLSOptions{},
-		S3:     NewDefaultS3Options(),
-		OIDC:   &OIDCOptions{},
+		Listen:         ":8080",
+		TLS:            &TLSOptions{},
+		S3:             NewDefaultS3Options(),
+		OIDC:           &OIDCOptions{},
+		Local:          NewDefaultLocalFSOptions(),
+		EnableRedirect: false, // default to false
 	}
 }
 

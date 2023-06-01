@@ -47,7 +47,8 @@ func HTTPUpload(ctx context.Context, location *url.URL, blob DescriptorWithConte
 		return err
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("unexpected status: %s", resp.Status)
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected status: %s %s", resp.Status, body)
 	}
 	return nil
 }

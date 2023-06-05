@@ -47,6 +47,13 @@ func NewRegistry(ctx context.Context, opt *Options) (*Registry, error) {
 	log := logr.FromContextOrDiscard(ctx)
 	log.Info("prepare registry", "options", opt)
 	var registryStore RegistryStore
+	if registryStore == nil && opt.S3 != nil && opt.S3.URL != "" {
+		s3store, err := NewS3RegistryStore(ctx, opt)
+		if err != nil {
+			return nil, err
+		}
+		registryStore = s3store
+	}
 	if registryStore == nil {
 		fsstore, err := NewFSRegistryStore(ctx, opt)
 		if err != nil {

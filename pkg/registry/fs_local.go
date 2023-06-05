@@ -8,8 +8,6 @@ import (
 	iopath "path"
 	"path/filepath"
 	"strings"
-
-	modelxerrors "kubegems.io/modelx/pkg/errors"
 )
 
 const (
@@ -53,29 +51,21 @@ func (f *LocalFSProvider) Put(ctx context.Context, path string, content BlobCont
 	return f.writedata(path, content)
 }
 
-func (f *LocalFSProvider) PutLocation(ctx context.Context, path string) (string, error) {
-	return "", modelxerrors.NewUnsupportedError("PutLocation is not supported for local filesystem")
-}
-
-func (f *LocalFSProvider) Get(ctx context.Context, path string) (BlobContent, error) {
+func (f *LocalFSProvider) Get(ctx context.Context, path string) (*BlobContent, error) {
 	meta, err := f.readmeta(path)
 	if err != nil {
-		return BlobContent{}, err
+		return nil, err
 	}
 	stream, err := f.getdata(path)
 	if err != nil {
-		return BlobContent{}, err
+		return nil, err
 	}
-	return BlobContent{
+	return &BlobContent{
 		ContentType:     meta.ContentType,
 		ContentLength:   meta.ContentLength,
 		ContentEncoding: meta.ContentEncoding,
 		Content:         stream,
 	}, nil
-}
-
-func (f *LocalFSProvider) GetLocation(ctx context.Context, path string) (string, error) {
-	return "", modelxerrors.NewUnsupportedError("GetLocation is not supported for local filesystem")
 }
 
 func (f *LocalFSProvider) Remove(ctx context.Context, path string, recursive bool) error {

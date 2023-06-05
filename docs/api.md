@@ -22,6 +22,13 @@
 | PUT    | /{repository}/{name}/blobs/{digest}  | 上传特定版本数据文件     |
 | POST   | /{repository}/{name}/garbage-collect | 触发垃圾收集             |
 
+## endpoints (redirect)
+
+| method | path                                                   | description  |
+| ------ | ------------------------------------------------------ | ------------ |
+| GET    | /{repository}/{name}/blobs/{digest}/locations/upload   | 获取上传位置 |
+| GET    | /{repository}/{name}/blobs/{digest}/locations/download | 获取下载位置 |
+
 ## 负载转移
 
 服务端的主要功能仅有两个，一是数据存储，二是索引更新。

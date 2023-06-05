@@ -43,5 +43,9 @@ func (s *Registry) route() http.Handler {
 	blobs.Methods("GET").Path("/{digest:" + DigestRegexp + "}").HandlerFunc(s.GetBlob)
 	blobs.Methods("PUT").Path("/{digest:" + DigestRegexp + "}").HandlerFunc(s.PutBlob)
 
+	// repository/blobs/locations
+	blobLocations := repository.PathPrefix("/blobs/{digest:" + DigestRegexp + "}/locations").Subrouter()
+	blobLocations.Methods("GET").Path("/{purpose}").HandlerFunc(s.GetBlobLocation)
+
 	return mux
 }

@@ -14,9 +14,7 @@ type FsObjectMeta struct {
 
 type FSProvider interface {
 	Put(ctx context.Context, path string, content BlobContent) error
-	PutLocation(ctx context.Context, path string) (string, error)
-	Get(ctx context.Context, path string) (BlobContent, error)
-	GetLocation(ctx context.Context, path string) (string, error)
+	Get(ctx context.Context, path string) (*BlobContent, error)
 	Remove(ctx context.Context, path string, recursive bool) error
 	Exists(ctx context.Context, path string) (bool, error)
 	List(ctx context.Context, path string, recursive bool) ([]FsObjectMeta, error)

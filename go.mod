@@ -12,6 +12,7 @@ require (
 	github.com/coreos/go-oidc/v3 v3.5.0
 	github.com/go-logr/logr v1.2.4
 	github.com/go-logr/stdr v1.2.2
+	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.8.0
 	github.com/jedib0t/go-pretty/v6 v6.4.6
 	github.com/mholt/archiver/v4 v4.0.0-alpha.7
@@ -19,6 +20,7 @@ require (
 	github.com/spf13/cobra v1.7.0
 	golang.org/x/exp v0.0.0-20230419192730-864b3d6c5c2c
 	golang.org/x/sync v0.1.0
+	golang.org/x/term v0.7.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

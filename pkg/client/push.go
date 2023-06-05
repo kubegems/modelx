@@ -31,9 +31,7 @@ func (c Client) Push(ctx context.Context, repo, version string, configfile, base
 	if err != nil {
 		return err
 	}
-	p := progress.NewMuiltiBar(os.Stdout, 40, PullPushConcurrency)
-	go p.Run(ctx)
-
+	p, ctx := progress.NewMuiltiBarContext(ctx, os.Stdout, 60, PullPushConcurrency)
 	// push blobs
 	for i := range manifest.Blobs {
 		desc := &manifest.Blobs[i]
@@ -60,7 +58,7 @@ func (c Client) Push(ctx context.Context, repo, version string, configfile, base
 		if err := c.PutManifest(ctx, repo, version, *manifest); err != nil {
 			return err
 		}
-		b.SetNameStatus("manifest", "done")
+		b.SetNameStatus("manifest", "done", true)
 		return nil
 	})
 	return p.Wait()
@@ -109,7 +107,7 @@ func (c Client) pushDirectory(ctx context.Context, cachedir, blobdir string, des
 	desc.Mode = diri.Mode()
 	desc.Modified = diri.ModTime()
 
-	bar.SetNameStatus(desc.Name, "digesting")
+	bar.SetNameStatus(desc.Name, "digesting", false)
 	filename := filepath.Join(cachedir, ".modelx", desc.Name+".tar.gz")
 	digest, err := TGZ(ctx, blobdir, filename)
 	if err != nil {
@@ -125,13 +123,8 @@ func (c Client) pushFile(ctx context.Context, blobfile string, desc *types.Descr
 		return err
 	}
 	if desc.Digest == "" {
-		bar.SetNameStatus(desc.Name, "digesting")
-		f, err := os.Open(blobfile)
-		if err != nil {
-			return err
-		}
-		digest, err := digest.FromReader(f)
-		_ = f.Close()
+		bar.SetNameStatus(desc.Name, "digesting", false)
+		digest, err := c.digest(ctx, blobfile)
 		if err != nil {
 			return err
 		}
@@ -146,17 +139,31 @@ func (c Client) pushFile(ctx context.Context, blobfile string, desc *types.Descr
 	if desc.Modified.IsZero() {
 		desc.Modified = fi.ModTime()
 	}
-	getReader := func() (io.ReadCloser, error) {
+	getReader := func() (io.ReadSeekCloser, error) {
 		return os.Open(blobfile)
 	}
-	bar.SetNameStatus(desc.Digest.Hex()[:8], "pending")
+	bar.SetNameStatus(desc.Digest.Hex()[:8], "pending", false)
 	return c.PushBlob(ctx, repo, DescriptorWithContent{Descriptor: *desc, GetContent: getReader}, bar)
+}
+
+func (c Client) digest(ctx context.Context, blobfile string) (digest.Digest, error) {
+	f, err := os.Open(blobfile)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	go func() {
+		<-ctx.Done()
+		f.Close()
+	}()
+	return digest.FromReader(f)
 }
 
 func (c Client) PushBlob(ctx context.Context, repo string, desc DescriptorWithContent, p *progress.Bar) error {
 	log := logr.FromContextOrDiscard(ctx).WithValues("digest", desc.Digest)
 	if desc.Digest == EmptyFileDigiest {
-		p.SetStatus("empty")
+		p.SetStatus("empty", true)
 		return nil
 	}
 	exist, err := c.Remote.HeadBlob(ctx, repo, desc.Digest)
@@ -165,24 +172,36 @@ func (c Client) PushBlob(ctx context.Context, repo string, desc DescriptorWithCo
 		return err
 	}
 	if exist {
-		p.SetProgress(desc.Size, desc.Size)
-		p.SetStatus("skipped")
+		p.SetStatus("exists", true)
 		return nil
 	}
 	wrappdesc := DescriptorWithContent{
 		Descriptor: desc.Descriptor,
-		GetContent: func() (io.ReadCloser, error) {
+		GetContent: func() (io.ReadSeekCloser, error) {
 			content, err := desc.GetContent()
 			if err != nil {
 				return nil, err
 			}
-			content = p.WrapReader(content, desc.Digest.Hex()[:8], desc.Size, "pushing", "failed")
+			content = p.WrapReader(content, desc.Digest.Hex()[:8], desc.Size, "pushing")
 			return content, nil
 		},
 	}
-	if err := c.Remote.UploadBlobContent(ctx, repo, wrappdesc); err != nil {
+	if err := c.pushBlob(ctx, repo, wrappdesc); err != nil {
 		return err
 	}
-	p.SetStatus("done")
+	p.SetStatus("done", true)
 	return nil
+}
+
+func (c Client) pushBlob(ctx context.Context, repo string, desc DescriptorWithContent) error {
+	location, err := c.Remote.GetBlobLocation(ctx, repo, desc.Descriptor, types.BlobLocationPurposeUpload)
+	if err != nil {
+		if !IsServerUnsupportError(err) {
+			return err
+		}
+		if err := c.Remote.UploadBlobContent(ctx, repo, desc); err != nil {
+			return err
+		}
+	}
+	return c.Extension.Upload(ctx, desc, *location)
 }

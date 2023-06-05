@@ -1,7 +1,6 @@
 # syntax=docker/dockerfile:1
 FROM alpine
 # TARGETOS TARGETARCH already set by '--platform'
-ARG TARGETOS TARGETARCH 
-COPY modelxdl-${TARGETOS}-${TARGETARCH} /app/modelxdl
-WORKDIR /app
-ENTRYPOINT ["/app/modelxdl"]
+ARG TARGETOS TARGETARCH
+COPY modelxdl-${TARGETOS}-${TARGETARCH} /bin/modelxdl
+ENTRYPOINT ["/bin/modelxdl"]

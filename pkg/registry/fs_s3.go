@@ -24,6 +24,7 @@ type S3Options struct {
 	AccessKey     string        `json:"accessKey,omitempty"`
 	SecretKey     string        `json:"secretKey,omitempty"`
 	PresignExpire time.Duration `json:"presignExpire,omitempty"`
+	PathStyle     bool          `json:"pathStyle,omitempty"`
 }
 
 func NewDefaultS3Options() *S3Options {
@@ -34,8 +35,11 @@ func NewDefaultS3Options() *S3Options {
 		SecretKey:     "",
 		PresignExpire: time.Hour,
 		Region:        "",
+		PathStyle:     true,
 	}
 }
+
+var _ FSProvider = &S3StorageProvider{}
 
 type S3StorageProvider struct {
 	Bucket  string
@@ -53,8 +57,8 @@ func NewS3FSProvider(ctx context.Context, options *S3Options) (*S3StorageProvide
 		config.WithRegion(options.Region),
 		config.WithEndpointResolverWithOptions(
 			aws.EndpointResolverWithOptionsFunc(
-				func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-					return aws.Endpoint{URL: options[0].(string)}, nil
+				func(service, region string, _ ...interface{}) (aws.Endpoint, error) {
+					return aws.Endpoint{URL: options.URL}, nil
 				},
 			),
 		),
@@ -63,7 +67,7 @@ func NewS3FSProvider(ctx context.Context, options *S3Options) (*S3StorageProvide
 		return nil, err
 	}
 	s3cli := s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.UsePathStyle = true
+		o.UsePathStyle = options.PathStyle
 	})
 	return &S3StorageProvider{
 		Bucket:  options.Buket,
@@ -87,18 +91,6 @@ func (m *S3StorageProvider) Put(ctx context.Context, path string, content BlobCo
 	} else {
 		return nil
 	}
-}
-
-func (m *S3StorageProvider) PutLocation(ctx context.Context, path string) (string, error) {
-	putobj := &s3.PutObjectInput{
-		Bucket: aws.String(m.Bucket),
-		Key:    m.prefixedKey(path),
-	}
-	out, err := m.PreSign.PresignPutObject(ctx, putobj, s3.WithPresignExpires(m.Expire))
-	if err != nil {
-		return "", err
-	}
-	return out.URL, nil
 }
 
 func (m *S3StorageProvider) Remove(ctx context.Context, path string, recursive bool) error {
@@ -140,32 +132,20 @@ func (m *S3StorageProvider) Remove(ctx context.Context, path string, recursive b
 	}
 }
 
-func (m *S3StorageProvider) Get(ctx context.Context, path string) (BlobContent, error) {
+func (m *S3StorageProvider) Get(ctx context.Context, path string) (*BlobContent, error) {
 	getobjout, err := m.Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(m.Bucket),
 		Key:    m.prefixedKey(path),
 	})
 	if err != nil {
-		return BlobContent{}, err
+		return nil, err
 	}
-	return BlobContent{
+	return &BlobContent{
 		Content:         getobjout.Body,
 		ContentType:     StringDeref(getobjout.ContentType, ""),
 		ContentLength:   getobjout.ContentLength,
 		ContentEncoding: StringDeref(getobjout.ContentEncoding, ""),
 	}, nil
-}
-
-func (m *S3StorageProvider) GetLocation(ctx context.Context, path string) (string, error) {
-	getobj := &s3.GetObjectInput{
-		Bucket: aws.String(m.Bucket),
-		Key:    m.prefixedKey(path),
-	}
-	out, err := m.PreSign.PresignGetObject(ctx, getobj, s3.WithPresignExpires(m.Expire))
-	if err != nil {
-		return "", err
-	}
-	return out.URL, nil
 }
 
 func (m *S3StorageProvider) Exists(ctx context.Context, path string) (bool, error) {

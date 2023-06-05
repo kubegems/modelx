@@ -13,16 +13,18 @@ import (
 
 var ErrRegistryStoreNotFound = stderrors.New("not found")
 
+type BlobLocation types.BlobLocation
+
+var (
+	BlobLocationPurposeUpload   = types.BlobLocationPurposeUpload
+	BlobLocationPurposeDownload = types.BlobLocationPurposeDownload
+)
+
 type BlobContent struct {
 	ContentType     string
 	ContentLength   int64
 	ContentEncoding string
 	Content         io.ReadCloser
-}
-
-type BlobResponse struct {
-	RedirectLocation string
-	Content          *BlobContent
 }
 
 type RegistryStore interface {
@@ -37,10 +39,13 @@ type RegistryStore interface {
 	DeleteManifest(ctx context.Context, repository string, reference string) error
 
 	ListBlobs(ctx context.Context, repository string) ([]digest.Digest, error)
-	GetBlob(ctx context.Context, repository string, digest digest.Digest) (*BlobResponse, error)
+	GetBlob(ctx context.Context, repository string, digest digest.Digest) (*BlobContent, error)
 	DeleteBlob(ctx context.Context, repository string, digest digest.Digest) error
-	PutBlob(ctx context.Context, repository string, digest digest.Digest, content BlobContent) (*BlobResponse, error)
+	PutBlob(ctx context.Context, repository string, digest digest.Digest, content BlobContent) error
 	ExistsBlob(ctx context.Context, repository string, digest digest.Digest) (bool, error)
+
+	GetBlobLocation(ctx context.Context, repository string, digest digest.Digest,
+		purpose string, properties map[string]string) (*BlobLocation, error)
 }
 
 func BlobDigestPath(repository string, d digest.Digest) string {

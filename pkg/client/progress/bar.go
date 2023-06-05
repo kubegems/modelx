@@ -5,6 +5,7 @@ import (
 	"io"
 	"math"
 	"strings"
+	"sync"
 
 	"kubegems.io/modelx/pkg/client/units"
 )
@@ -12,44 +13,113 @@ import (
 var SpinnerDefault = []rune{'⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'}
 
 type Bar struct {
-	Name   string
-	Total  int64  // total bytes, -1 for indeterminate
-	Used   int64  // completed bytes
-	Width  int    // width of the bar
-	Status string // status text
-	Done   bool   // if the bar is done
-	mp     *MultiBar
+	Name       string
+	MaxNameLen int    // max name length
+	Total      int64  // total bytes, -1 for indeterminate
+	Width      int    // width of the bar
+	Status     string // status text
+	Done       bool   // if the bar is done
+	Fragments  map[string]*BarFragment
+
+	nameindex    int // scroll name index
+	refreshcount int // refresh count for scroll name
+	mu           sync.Mutex
+	mp           *MultiBar
 }
 
-func (b *Bar) Write(w io.Writer) {
-	if b.Width == 0 {
-		b.Width = 40
-	}
-	var completed int
-	var status string
+type BarFragment struct {
+	Offset       int64  // offset of the fragment
+	Processed    int64  // processed bytes
+	uid          string // uid of the fragment, for delete
+	nototalindex int    // index when no total
+}
 
+func (b *Bar) SetNameStatus(name, status string, done bool) {
+	b.Name, b.Status, b.Done = name, status, done
+	b.Notify()
+}
+
+func (b *Bar) SetStatus(status string, done bool) {
+	b.Status = status
+	b.Done = done
+	b.Notify()
+}
+
+func (b *Bar) SetDone() {
+	b.Done = true
+	b.Notify()
+}
+
+func (r *Bar) Notify() {
+	if r.mp != nil {
+		r.mp.print()
+	}
+}
+
+func (b *Bar) Print(w io.Writer) {
+	processwidth := b.Width
+
+	buff := make([]byte, processwidth)
+	status := ""
 	if b.Done {
-		completed = b.Width
+		for i := range buff {
+			buff[i] = '+'
+		}
 		status = b.Status
 	} else {
-		if b.Total <= 0 {
-			completed = 0
-			status = b.Status
-		} else {
-			completed = int(float64(b.Width) * float64(b.Used) / float64(b.Total))
-			if completed < 0 {
-				completed = 0
+		for i := range buff {
+			buff[i] = '-'
+		}
+		var totalProcessed int64
+		for _, f := range b.Fragments {
+			totalProcessed += f.Processed
+			if b.Total > 0 {
+				start := int(float64(processwidth) * float64(f.Offset) / float64(b.Total))
+				end := int(float64(processwidth) * float64(f.Offset+f.Processed) / float64(b.Total))
+				if end > processwidth {
+					end = processwidth
+				}
+				if start < 0 {
+					start = 0
+				}
+				for i := start; i < end; i++ {
+					buff[i] = '+'
+				}
+			} else {
+				buff[f.nototalindex%processwidth] = '+'
+				f.nototalindex++
 			}
-			status = units.HumanSize(float64(b.Used)) + "/" + units.HumanSize(float64(b.Total))
+		}
+		if totalProcessed > 0 {
+			if b.Total <= 0 {
+				status = units.HumanSize(float64(totalProcessed))
+			} else {
+				status = units.HumanSize(float64(totalProcessed)) + "/" + units.HumanSize(float64(b.Total))
+			}
+		} else {
+			status = b.Status
 		}
 	}
-
-	fmt.Fprintf(w, "%s [%s%s] %s\n",
-		b.Name,
-		strings.Repeat("+", completed),
-		strings.Repeat("-", b.Width-completed),
-		status,
-	)
+	showname := b.Name
+	if len(b.Name) > b.MaxNameLen {
+		b.mp.haschange = true // force print
+		fullname := b.Name + "  "
+		lowptr := b.nameindex % len(fullname)
+		maxptr := lowptr + b.MaxNameLen
+		if maxptr < len(fullname) {
+			showname = fullname[lowptr:maxptr]
+		} else {
+			showname = fullname[lowptr:] + fullname[:maxptr-len(fullname)]
+		}
+		// 3x speed low than fps
+		if b.refreshcount%3 == 0 {
+			b.nameindex++
+		}
+		b.refreshcount++
+	} else if len(showname) < b.MaxNameLen {
+		showname += strings.Repeat(" ", b.MaxNameLen-len(showname))
+	}
+	fmt.Fprintf(w, "%s [%s] %s\n", showname, string(buff), status)
 }
 
 func percent(total, completed int64) int {
@@ -67,110 +137,4 @@ func percent(total, completed int64) int {
 		return 0
 	}
 	return int(round)
-}
-
-func (b *Bar) SetProgress(completed, total int64) {
-	b.Used, b.Total = completed, total
-	b.Notify()
-}
-
-func (b *Bar) SetNameStatus(name, status string) {
-	b.Name, b.Status = name, status
-	b.Notify()
-}
-
-func (b *Bar) SetStatus(status string) {
-	b.Status = status
-	b.Notify()
-}
-
-func (b *Bar) SetDone() {
-	b.Done = true
-	b.Notify()
-}
-
-func (b *Bar) Increment(n int64) {
-	b.Used += n
-	b.Notify()
-}
-
-func (b *Bar) WrapReader(rc io.ReadCloser, name string, total int64, initStatus, failedStatus string) io.ReadCloser {
-	b.Total = total
-	b.Name = name
-	b.Status = initStatus
-	b.Used = 0 // reset
-	defer b.Notify()
-	return &barReader{rc: rc, b: b, failedStatus: failedStatus}
-}
-
-type barReader struct {
-	rc           io.ReadCloser
-	b            *Bar
-	failedStatus string
-}
-
-func (r *Bar) Notify() {
-	if r.mp != nil {
-		r.mp.print()
-	}
-}
-
-func (r *barReader) Read(p []byte) (int, error) {
-	n, err := r.rc.Read(p)
-	if err != nil {
-		r.b.Status = r.failedStatus
-	}
-	r.b.Used += int64(n)
-	r.b.mp.haschange = true
-	return n, err
-}
-
-func (r *barReader) Close() error {
-	if r.b.Used < r.b.Total {
-		r.b.Status = r.failedStatus
-	}
-	r.b.Notify()
-	return r.rc.Close()
-}
-
-func (b *Bar) WrapWriter(w io.Writer, name string, total int64, initStatus, failedStatus string) io.Writer {
-	b.Name = name
-	b.Total = total
-	b.Status = initStatus
-	b.Used = 0
-	b.Notify()
-	return &bario{w: w, b: b, onFailed: failedStatus}
-}
-
-type bario struct {
-	w        io.Writer
-	b        *Bar
-	onFailed string
-}
-
-func (r *bario) Write(p []byte) (int, error) {
-	n, err := r.w.Write(p)
-	if err != nil {
-		r.b.Status = r.onFailed
-	}
-	r.b.Used += int64(n)
-	r.b.mp.haschange = true
-	return n, err
-}
-
-func (r *bario) WriteAt(p []byte, off int64) (int, error) {
-	wat, ok := r.w.(io.WriterAt)
-	if !ok {
-		return 0, io.ErrUnexpectedEOF
-	}
-	n, err := wat.WriteAt(p, off)
-	if err != nil {
-		r.b.mp.haschange = true
-		r.b.Done = true
-		r.b.Status = r.onFailed
-		return n, err
-	}
-	r.b.Used += int64(n)
-	r.b.mp.haschange = true
-	return n, nil
 }

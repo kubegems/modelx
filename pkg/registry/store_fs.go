@@ -25,6 +25,8 @@ type FSRegistryStore struct {
 	EnableRedirect bool
 }
 
+var _ RegistryStore = &FSRegistryStore{}
+
 func NewFSRegistryStore(ctx context.Context, options *Options) (*FSRegistryStore, error) {
 	var fs FSProvider
 	if fs == nil && options.S3.URL != "" {
@@ -335,38 +337,21 @@ func (m *FSRegistryStore) ExistsBlob(ctx context.Context, repository string, dig
 	}
 }
 
-func (m *FSRegistryStore) GetBlob(ctx context.Context, repository string, digest digest.Digest) (*BlobResponse, error) {
+func (m *FSRegistryStore) GetBlob(ctx context.Context, repository string, digest digest.Digest) (*BlobContent, error) {
 	path := BlobDigestPath(repository, digest)
-	if m.EnableRedirect {
-		location, err := m.FS.GetLocation(ctx, path)
-		if err != nil {
-			return nil, errors.NewInternalError(err)
-		}
-		return &BlobResponse{RedirectLocation: location}, nil
-	} else {
-		content, err := m.FS.Get(ctx, path)
-		if err != nil {
-			return nil, errors.NewInternalError(err)
-		}
-		return &BlobResponse{Content: &content}, nil
+	content, err := m.FS.Get(ctx, path)
+	if err != nil {
+		return nil, errors.NewInternalError(err)
 	}
+	return content, nil
 }
 
-func (m *FSRegistryStore) PutBlob(ctx context.Context, repository string, digest digest.Digest, content BlobContent) (*BlobResponse, error) {
+func (m *FSRegistryStore) PutBlob(ctx context.Context, repository string, digest digest.Digest, content BlobContent) error {
 	path := BlobDigestPath(repository, digest)
-	if m.EnableRedirect {
-		location, err := m.FS.PutLocation(ctx, path)
-		if err != nil {
-			return nil, errors.NewInternalError(err)
-		}
-		return &BlobResponse{RedirectLocation: location}, nil
-	} else {
-		if err := m.FS.Put(ctx, path, content); err != nil {
-			return nil, errors.NewInternalError(err)
-		} else {
-			return &BlobResponse{}, nil
-		}
+	if err := m.FS.Put(ctx, path, content); err != nil {
+		return errors.NewInternalError(err)
 	}
+	return nil
 }
 
 func (m *FSRegistryStore) ListBlobs(ctx context.Context, repository string) ([]digest.Digest, error) {
@@ -392,4 +377,10 @@ func (m *FSRegistryStore) DeleteBlob(ctx context.Context, repository string, dig
 		return errors.NewInternalError(err)
 	}
 	return nil
+}
+
+func (m *FSRegistryStore) GetBlobLocation(
+	ctx context.Context, repository string, digest digest.Digest, purpose string, properties map[string]string,
+) (*BlobLocation, error) {
+	return nil, errors.NewUnsupportedError("blob location is not supported in fs store")
 }

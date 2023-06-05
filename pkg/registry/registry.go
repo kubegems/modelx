@@ -154,18 +154,12 @@ func (s *Registry) PutBlob(w http.ResponseWriter, r *http.Request) {
 			ContentType:   contentType,
 			Content:       r.Body,
 		}
-		result, err := s.Store.PutBlob(r.Context(), repository, digest, content)
-		if err != nil {
+		if err := s.Store.PutBlob(r.Context(), repository, digest, content); err != nil {
 			log.Error(err, "store put blob")
 			ResponseError(w, err)
 			return
 		}
-		if location := result.RedirectLocation; location != "" {
-			w.Header().Set("Location", location)
-			w.WriteHeader(http.StatusTemporaryRedirect)
-		} else {
-			w.WriteHeader(http.StatusCreated)
-		}
+		w.WriteHeader(http.StatusCreated)
 	})
 }
 
@@ -181,17 +175,13 @@ func (s *Registry) GetBlob(w http.ResponseWriter, r *http.Request) {
 			ResponseError(w, err)
 			return
 		}
-		if location := result.RedirectLocation; location != "" {
-			w.Header().Add("Location", location)
-			w.WriteHeader(http.StatusFound)
-		} else {
-			w.Header().Set("Content-Length", strconv.Itoa(int(result.Content.ContentLength)))
-			w.Header().Set("Content-Type", result.Content.ContentType)
-			w.Header().Set("Content-Encoding", result.Content.ContentEncoding)
-			w.WriteHeader(http.StatusOK)
+		defer result.Close()
 
-			io.Copy(w, result.Content.Content)
-		}
+		w.Header().Set("Content-Length", strconv.Itoa(int(result.ContentLength)))
+		w.Header().Set("Content-Type", result.ContentType)
+		w.Header().Set("Content-Encoding", result.ContentEncoding)
+		w.WriteHeader(http.StatusOK)
+		io.Copy(w, result.Content)
 		return
 	})
 }
@@ -204,6 +194,26 @@ func (s *Registry) GarbageCollect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ResponseOK(w, result)
+}
+
+func (s *Registry) GetBlobLocation(w http.ResponseWriter, r *http.Request) {
+	BlobDigestFun(w, r, func(ctx context.Context, repository string, digest digest.Digest) {
+		purpose := mux.Vars(r)["purpose"]
+		properties := make(map[string]string)
+		for k, v := range r.URL.Query() {
+			properties[k] = strings.Join(v, ",")
+		}
+		result, err := s.Store.GetBlobLocation(r.Context(), repository, digest, purpose, properties)
+		if err != nil {
+			if IsRegistryStoreNotNotFound(err) {
+				ResponseError(w, errors.NewBlobUnknownError(digest))
+			} else {
+				ResponseError(w, err)
+			}
+			return
+		}
+		ResponseOK(w, result)
+	})
 }
 
 func BlobDigestFun(w http.ResponseWriter, r *http.Request, fun func(ctx context.Context, repository string, digest digest.Digest)) {

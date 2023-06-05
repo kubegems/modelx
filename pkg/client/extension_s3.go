@@ -2,72 +2,147 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/url"
-	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"golang.org/x/sync/errgroup"
+	"kubegems.io/modelx/pkg/types"
 )
 
-func S3Download(ctx context.Context, location *url.URL, into io.WriterAt) error {
-	cred := location.Query().Get("X-Amz-Credential")
-
-	creds := strings.SplitN(cred, "/", 2)
-
-	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(creds[0], creds[1], "")),
-		config.WithEndpointResolverWithOptions(
-			aws.EndpointResolverWithOptionsFunc(
-				func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-					return aws.Endpoint{URL: location.Scheme + "://" + location.Host}, nil
-				},
-			),
-		))
-	if err != nil {
-		return err
-	}
-
-	cli := s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.UsePathStyle = true
-	})
-
-	splites := strings.Split(location.Path, "/")
-
-	bucket, key := "", ""
-	for i, val := range splites {
-		if val == "" {
-			continue
-		}
-		bucket = splites[i]
-		key = strings.Join(splites[i+1:], "/")
-		break
-	}
-
-	if _, err := manager.NewDownloader(cli).Download(ctx, into, &s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	}); err != nil {
-		return err
-	}
-	return nil
+func init() {
+	GlobalExtensions["s3"] = S3Extension{}
 }
 
-func S3Upload(ctx context.Context, location *url.URL, blob *BlobContent) error {
-	cfg, err := config.LoadDefaultConfig(ctx, func(lo *config.LoadOptions) error {
-		return nil
-	})
+const (
+	UploadPartConcurrency   = 3
+	DownloadPartConcurrency = 3
+)
+
+type S3Extension struct{}
+
+func (e S3Extension) Download(ctx context.Context, blob types.Descriptor, location types.BlobLocation, into io.Writer) error {
+	var properties S3Properties
+	convertProperties(&properties, location.Properties)
+
+	if len(properties.Parts) == 0 {
+		return fmt.Errorf("no parts found")
+	}
+	firstpart := properties.Parts[0]
+	u, err := url.Parse(firstpart.URL)
 	if err != nil {
 		return err
 	}
-	_, err = manager.NewUploader(s3.NewFromConfig(cfg)).Upload(ctx, &s3.PutObjectInput{
-		Body:          blob.Content,
-		Key:           aws.String(""),
-		ContentLength: blob.ContentLength,
-	})
-	return err
+	return HTTPDownload(ctx, u, firstpart.SignedHeader, into)
+}
+
+type S3Properties struct {
+	Multipart bool            `json:"multipart,omitempty"`
+	UploadID  string          `json:"uploadID,omitempty"`
+	Parts     []presignedPart `json:"parts,omitempty"`
+}
+
+type presignedPart struct {
+	URL          string              `json:"url,omitempty"`
+	Method       string              `json:"method,omitempty"`
+	SignedHeader map[string][]string `json:"signedHeader,omitempty"`
+	PartNumber   int                 `json:"partNumber,omitempty"`
+}
+
+func (e S3Extension) Upload(ctx context.Context, blob DescriptorWithContent, location types.BlobLocation) error {
+	var properties S3Properties
+	convertProperties(&properties, location.Properties)
+
+	parts := calcParts(blob.Size, len(properties.Parts))
+	for i := range parts {
+		u, err := url.Parse(properties.Parts[i].URL)
+		if err != nil {
+			return err
+		}
+		parts[i].url = u
+		parts[i].header = properties.Parts[i].SignedHeader
+	}
+	eg := errgroup.Group{}
+	eg.SetLimit(UploadPartConcurrency)
+	for i := range parts {
+		part := parts[i]
+		eg.Go(func() error {
+			return retry(ctx, 3, func() error {
+				getoffsetbody := func() (io.ReadCloser, error) {
+					partcontent, err := blob.GetContent()
+					if err != nil {
+						return nil, err
+					}
+					n, err := partcontent.Seek(part.offset, io.SeekStart)
+					if err != nil {
+						return nil, err
+					}
+					_ = n
+					limitbody := NewSectionReader(partcontent, part.offset, part.length)
+					return limitbody, nil
+				}
+				return HTTPUpload(ctx, part.url, part.header, part.length, getoffsetbody)
+			})
+		})
+	}
+	return eg.Wait()
+}
+
+type PartRange struct {
+	url    *url.URL
+	header map[string][]string
+	offset int64
+	length int64
+	w      io.WriterAt
+}
+
+func calcParts(total int64, partscount int) []PartRange {
+	partsize := total / int64(partscount)
+
+	parts := make([]PartRange, partscount)
+	for i := range parts {
+		parts[i].offset = int64(i) * partsize
+		if i == len(parts)-1 {
+			parts[i].length = total - parts[i].offset // last part
+		} else {
+			parts[i].length = partsize
+		}
+	}
+	return parts
+}
+
+// NewSectionReader returns a SectionReader that reads from r
+// starting at offset off and stops with EOF after n bytes.
+// it's a copy from io.NewSectionReader but use io.ReadSeekCloser and seek to offset on init
+func NewSectionReader(rc io.ReadSeekCloser, offset, length int64) io.ReadCloser {
+	_, err := rc.Seek(offset, io.SeekStart)
+	if err != nil {
+		panic(err)
+	}
+	return &ReadCloser{
+		Reader: io.LimitReader(rc, length),
+		Closer: rc,
+	}
+}
+
+type ReadCloser struct {
+	io.Reader
+	io.Closer
+}
+
+func retry(ctx context.Context, max int, fn func() error) error {
+	var reterr error
+	for i := 0; i < max; i++ {
+		if err := fn(); err != nil {
+			reterr = err
+		} else {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+	}
+	return reterr
 }

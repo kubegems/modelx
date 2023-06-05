@@ -2,14 +2,17 @@ package client
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
 	"kubegems.io/modelx/pkg/client/progress"
+	"kubegems.io/modelx/pkg/errors"
 	"kubegems.io/modelx/pkg/types"
 )
 
@@ -36,19 +39,17 @@ func (c Client) Pull(ctx context.Context, repo string, version string, into stri
 }
 
 func (c Client) PullBlobs(ctx context.Context, repo string, basedir string, blobs []types.Descriptor) error {
-	mb := progress.NewMuiltiBar(os.Stdout, 40, PullPushConcurrency)
-	go mb.Run(ctx)
-
+	mb, ctx := progress.NewMuiltiBarContext(ctx, os.Stdout, 60, PullPushConcurrency)
 	for _, blob := range blobs {
 		blob := blob
 		mb.Go(blob.Name, "pending", func(b *progress.Bar) error {
-			return c.PullBlob(ctx, repo, blob, basedir, b)
+			return c.pullBlobProgress(ctx, repo, blob, basedir, b)
 		})
 	}
 	return mb.Wait()
 }
 
-func (c Client) PullBlob(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar) error {
+func (c Client) pullBlobProgress(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar) error {
 	switch desc.MediaType {
 	case MediaTypeModelDirectoryTarGz:
 		return c.pullDirectory(ctx, repo, desc, basedir, bar, true)
@@ -109,7 +110,7 @@ func (c Client) pullConfig(ctx context.Context, repo string, desc types.Descript
 
 func (c Client) pullFile(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar) error {
 	// check hash
-	bar.SetNameStatus(desc.Name, "checking")
+	bar.SetNameStatus(desc.Name, "checking", false)
 	filename := filepath.Join(basedir, desc.Name)
 	if f, err := os.Open(filename); err == nil {
 		digest, err := digest.FromReader(f)
@@ -117,8 +118,7 @@ func (c Client) pullFile(ctx context.Context, repo string, desc types.Descriptor
 			return err
 		}
 		if digest.String() == desc.Digest.String() {
-			bar.SetProgress(desc.Size, desc.Size)
-			bar.SetNameStatus(desc.Digest.Hex()[:8], "already exists")
+			bar.SetNameStatus(desc.Digest.Hex()[:8], "already exists", true)
 			return nil
 		}
 		_ = f.Close()
@@ -134,23 +134,23 @@ func (c Client) pullFile(ctx context.Context, repo string, desc types.Descriptor
 	if desc.Digest == EmptyFileDigiest {
 		return nil
 	}
-	w := bar.WrapWriter(f, desc.Digest.Hex()[:8], desc.Size, "downloading", "failed")
-	if err := c.Remote.GetBlobContent(ctx, repo, desc.Digest, w); err != nil {
+	w := bar.WrapWriter(f, desc.Digest.Hex()[:8], desc.Size, "downloading")
+	if err := c.PullBlob(ctx, repo, desc, w); err != nil {
 		return err
 	}
-	bar.SetStatus("done")
+	bar.SetStatus("done", true)
 	return nil
 }
 
 func (c Client) pullDirectory(ctx context.Context, repo string, desc types.Descriptor, basedir string, bar *progress.Bar, useCache bool) error {
 	// check hash
-	bar.SetNameStatus(desc.Name, "checking")
+	bar.SetNameStatus(desc.Name, "checking", false)
 	digest, err := TGZ(ctx, filepath.Join(basedir, desc.Name), "")
 	if err != nil {
 		return err
 	}
 	if digest.String() == desc.Digest.String() {
-		bar.SetNameStatus(desc.Digest.Hex()[:8], "already exists")
+		bar.SetNameStatus(desc.Digest.Hex()[:8], "already exists", true)
 		return nil
 	}
 
@@ -163,8 +163,8 @@ func (c Client) pullDirectory(ctx context.Context, repo string, desc types.Descr
 		}
 		defer wf.Close()
 
-		w := bar.WrapWriter(wf, desc.Digest.Hex()[:8], desc.Size, "downloading", "failed")
-		if err := c.Remote.GetBlobContent(ctx, repo, desc.Digest, w); err != nil {
+		w := bar.WrapWriter(wf, desc.Digest.Hex()[:8], desc.Size, "downloading")
+		if err := c.PullBlob(ctx, repo, desc, w); err != nil {
 			return err
 		}
 		_ = wf.Close()
@@ -174,11 +174,11 @@ func (c Client) pullDirectory(ctx context.Context, repo string, desc types.Descr
 		if err != nil {
 			return err
 		}
-		r := bar.WrapReader(rf, desc.Digest.Hex()[:8], desc.Size, "extracting", "failed")
+		r := bar.WrapReader(rf, desc.Digest.Hex()[:8], desc.Size, "extracting")
 		if err := UnTGZ(ctx, filepath.Join(basedir, desc.Name), r); err != nil {
 			return err
 		}
-		bar.SetStatus("done")
+		bar.SetStatus("done", true)
 		return nil
 	} else {
 		// download and extract at same time
@@ -188,17 +188,36 @@ func (c Client) pullDirectory(ctx context.Context, repo string, desc types.Descr
 		eg, ctx := errgroup.WithContext(ctx)
 		// download
 		eg.Go(func() error {
-			w := bar.WrapWriter(pipew, desc.Digest.Hex()[:8], desc.Size, "downloading", "failed")
-			return c.Remote.GetBlobContent(ctx, repo, desc.Digest, w)
+			w := bar.WrapWriter(pipew, desc.Digest.Hex()[:8], desc.Size, "downloading")
+			return c.PullBlob(ctx, repo, desc, w)
 		})
 		// extract
 		eg.Go(func() error {
 			if err := UnTGZ(ctx, filepath.Join(basedir, desc.Name), src); err != nil {
 				return err
 			}
-			bar.SetStatus("done")
+			bar.SetStatus("done", true)
 			return nil
 		})
 		return eg.Wait()
 	}
+}
+
+func (c Client) PullBlob(ctx context.Context, repo string, desc types.Descriptor, into io.Writer) error {
+	location, err := c.Remote.GetBlobLocation(ctx, repo, desc, types.BlobLocationPurposeDownload)
+	if err != nil {
+		if !IsServerUnsupportError(err) {
+			return err
+		}
+		return c.Remote.GetBlobContent(ctx, repo, desc.Digest, into)
+	}
+	return c.Extension.Download(ctx, desc, *location, into)
+}
+
+func IsServerUnsupportError(err error) bool {
+	info := errors.ErrorInfo{}
+	if stderrors.As(err, &info) {
+		return info.Code == errors.ErrCodeUnsupported || info.HttpStatus == http.StatusNotFound
+	}
+	return false
 }

@@ -12,15 +12,38 @@ const (
 	AnnotationFileMode = "filemode"
 )
 
+const (
+	BlobLocationPurposeUpload   string = "upload"
+	BlobLocationPurposeDownload string = "download"
+)
+
+type BlobLocation struct {
+	Provider   string     `json:"provider,omitempty"`
+	Purpose    string     `json:"purpose,omitempty"`
+	Properties Properties `json:"properties,omitempty"`
+}
+
+type Properties map[string]any
+
 type Descriptor struct {
-	Name        string            `json:"name"`
-	MediaType   string            `json:"mediaType,omitempty"`
-	Digest      digest.Digest     `json:"digest,omitempty"`
-	Size        int64             `json:"size,omitempty"`
-	Mode        os.FileMode       `json:"mode,omitempty"`
-	URLs        []string          `json:"urls,omitempty"`
-	Modified    time.Time         `json:"modified,omitempty"`
-	Annotations map[string]string `json:"annotations,omitempty"`
+	Name        string        `json:"name"`
+	MediaType   string        `json:"mediaType,omitempty"`
+	Digest      digest.Digest `json:"digest,omitempty"`
+	Size        int64         `json:"size,omitempty"`
+	Mode        os.FileMode   `json:"mode,omitempty"`
+	URLs        []string      `json:"urls,omitempty"`
+	Modified    time.Time     `json:"modified,omitempty"`
+	Annotations Annotations   `json:"annotations,omitempty"`
+}
+
+type Annotations map[string]string
+
+func (a Annotations) String() string {
+	var result []string
+	for k, v := range a {
+		result = append(result, k+"="+v)
+	}
+	return strings.Join(result, ",")
 }
 
 func SortDescriptorName(a, b Descriptor) bool {

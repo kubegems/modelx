@@ -13,7 +13,7 @@ import (
 
 type DescriptorWithContent struct {
 	types.Descriptor
-	GetContent func() (io.ReadCloser, error)
+	GetContent func() (io.ReadSeekCloser, error)
 }
 
 var tgz = archiver.CompressedArchive{

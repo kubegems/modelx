@@ -5,11 +5,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/url"
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"kubegems.io/modelx/pkg/registry/vault"
+	"kubegems.io/modelx/pkg/types"
 	sdkaccess "src.cloudminds.com/blockchain/vault/vault-sdk-go/sdk/access"
 	sdkvault "src.cloudminds.com/blockchain/vault/vault-sdk-go/sdk/vault"
 	sdkwallet "src.cloudminds.com/blockchain/vault/vault-sdk-go/sdk/wallet"
@@ -17,7 +17,6 @@ import (
 
 func init() {
 	GlobalExtensions["idoe"] = &IdoeExt{}
-	GlobalExtensions["idoes"] = &IdoeExt{}
 }
 
 type IdoeExt struct {
@@ -58,8 +57,12 @@ func (e *IdoeExt) vaultOf(ctx context.Context, serviceaddress string) (*sdkvault
 	return vault, nil
 }
 
-func (e *IdoeExt) Download(ctx context.Context, location *url.URL, into io.Writer) error {
-	assetmeta, err := vault.ParseVaultURL(location.String())
+func (e *IdoeExt) Download(ctx context.Context, blob types.Descriptor, location types.BlobLocation, into io.Writer) error {
+	properties := IdoeExtProperties{}
+	if err := convertProperties(&properties, location.Properties); err != nil {
+		return err
+	}
+	assetmeta, err := vault.ParseVaultURL(properties.URL)
 	if err != nil {
 		return err
 	}
@@ -97,8 +100,16 @@ func (e *IdoeExt) Download(ctx context.Context, location *url.URL, into io.Write
 	}
 }
 
-func (e *IdoeExt) Upload(ctx context.Context, location *url.URL, blob DescriptorWithContent) error {
-	assetmeta, err := vault.ParseVaultURL(location.String())
+type IdoeExtProperties struct {
+	URL string `json:"url,omitempty"`
+}
+
+func (e *IdoeExt) Upload(ctx context.Context, blob DescriptorWithContent, location types.BlobLocation) error {
+	properties := IdoeExtProperties{}
+	if err := convertProperties(&properties, location.Properties); err != nil {
+		return err
+	}
+	assetmeta, err := vault.ParseVaultURL(properties.URL)
 	if err != nil {
 		return err
 	}

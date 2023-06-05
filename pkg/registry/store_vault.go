@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/opencontainers/go-digest"
+	"kubegems.io/modelx/pkg/errors"
 	"kubegems.io/modelx/pkg/registry/vault"
 	"kubegems.io/modelx/pkg/types"
 	"src.cloudminds.com/blockchain/vault/vault-sdk-go/sdk/models"
@@ -132,30 +133,12 @@ func (s *VaultRegistryStore) DeleteManifest(ctx context.Context, repository stri
 	return s.VaultClient.RemoveAssetFile(ctx, assetid, ManifestPath("", reference))
 }
 
-func (s *VaultRegistryStore) GetBlob(ctx context.Context, repository string, digest digest.Digest) (*BlobResponse, error) {
-	assetid, err := s.getAssetID(ctx, repository)
-	if err != nil {
-		return nil, err
-	}
-	username := UsernameFromContext(ctx)
-	redirecturl, err := s.VaultClient.GenerateBolbURL(ctx, username, assetid, BlobDigestPath("", digest), true, false)
-	if err != nil {
-		return nil, err
-	}
-	return &BlobResponse{RedirectLocation: redirecturl}, nil
+func (s *VaultRegistryStore) GetBlob(ctx context.Context, repository string, digest digest.Digest) (*BlobContent, error) {
+	return nil, errors.NewUnsupportedError("get blob is not supported in vault store") // use blob location instead
 }
 
-func (s *VaultRegistryStore) PutBlob(ctx context.Context, repository string, digest digest.Digest, content BlobContent) (*BlobResponse, error) {
-	assetid, err := s.getOrCreateAssetID(ctx, repository) // auto create
-	if err != nil {
-		return nil, err
-	}
-	username := UsernameFromContext(ctx)
-	redirecturl, err := s.VaultClient.GenerateBolbURL(ctx, username, assetid, BlobDigestPath("", digest), true, true)
-	if err != nil {
-		return nil, err
-	}
-	return &BlobResponse{RedirectLocation: redirecturl}, nil
+func (s *VaultRegistryStore) PutBlob(ctx context.Context, repository string, digest digest.Digest, content BlobContent) error {
+	return errors.NewUnsupportedError("put blob is not supported in vault store") // use blob location instead
 }
 
 func (s *VaultRegistryStore) ExistsBlob(ctx context.Context, repository string, digest digest.Digest) (bool, error) {
@@ -196,6 +179,40 @@ func (s *VaultRegistryStore) DeleteBlob(ctx context.Context, repository string, 
 		return err
 	}
 	return s.VaultClient.RemoveAssetFile(ctx, assetid, BlobDigestPath("", digest))
+}
+
+func (s *VaultRegistryStore) GetBlobLocation(
+	ctx context.Context, repository string, digest digest.Digest, purpose string, properties map[string]string,
+) (*BlobLocation, error) {
+	assetid, err := s.getAssetID(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	username := UsernameFromContext(ctx)
+	path := BlobDigestPath("", digest)
+
+	var url string
+	switch purpose {
+	case BlobLocationPurposeUpload:
+		redirecturl, err := s.VaultClient.GenerateBolbURL(ctx, username, assetid, path, true, true)
+		if err != nil {
+			return nil, err
+		}
+		url = redirecturl
+	case BlobLocationPurposeDownload:
+		redirecturl, err := s.VaultClient.GenerateBolbURL(ctx, username, assetid, path, true, false)
+		if err != nil {
+			return nil, err
+		}
+		url = redirecturl
+	default:
+		return nil, errors.NewUnsupportedError("blob location purpose is not supported in vault store")
+	}
+	return &BlobLocation{
+		Provider:   "idoe",
+		Purpose:    purpose,
+		Properties: map[string]any{"url": url},
+	}, nil
 }
 
 func (s *VaultRegistryStore) getOrCreateAssetID(ctx context.Context, repository string) (*big.Int, error) {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -200,13 +201,17 @@ func (s *VaultClient) PutAssetAttr(ctx context.Context, assetid *big.Int, kvs ma
 }
 
 func (s *VaultClient) PutAssetFile(ctx context.Context, assetid *big.Int, key string, val []byte) error {
+	return s.PutAssetFileFromReader(ctx, assetid, key, bytes.NewReader(val))
+}
+
+func (s *VaultClient) PutAssetFileFromReader(ctx context.Context, assetid *big.Int, key string, r io.ReadSeeker) error {
 	return s.vault.UploadAssetRaw(ctx,
 		s.ServiceWallet(),
 		nil, // access grant
 		s.ServiceProjectAddress(),
 		assetid,
 		key,
-		bytes.NewReader(val))
+		r)
 }
 
 func (s *VaultClient) ListAssetFile(ctx context.Context, assetid *big.Int, prefix string) ([]*models.RawFile, error) {

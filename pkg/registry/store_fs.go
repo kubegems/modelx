@@ -143,8 +143,8 @@ func (m *FSRegistryStore) GetIndex(ctx context.Context, repository string, searc
 }
 
 func (m *FSRegistryStore) PutIndex(ctx context.Context, repository string, index types.Index) error {
-	slices.SortFunc(index.Manifests, func(a, b types.Descriptor) bool {
-		return strings.Compare(a.Name, b.Name) < 0
+	slices.SortFunc(index.Manifests, func(a, b types.Descriptor) int {
+		return strings.Compare(a.Name, b.Name)
 	})
 
 	// use latest manifest annotations as index annotations

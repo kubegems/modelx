@@ -46,8 +46,8 @@ func (a Annotations) String() string {
 	return strings.Join(result, ",")
 }
 
-func SortDescriptorName(a, b Descriptor) bool {
-	return strings.Compare(a.Name, b.Name) < 0
+func SortDescriptorName(a, b Descriptor) int {
+	return strings.Compare(a.Name, b.Name)
 }
 
 type Index struct {

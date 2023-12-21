@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -68,7 +69,7 @@ func (s *S3RegistryStore) PutManifest(ctx context.Context, repository string, re
 	// complete multipart upload
 	for _, blob := range manifest.Blobs {
 		path := BlobDigestPath(repository, blob.Digest)
-		if err := s.completeMultipartUpload(ctx, path); err != nil {
+		if err := s.completeMultipartUpload(ctx, path, blob.Size); err != nil {
 			return err
 		}
 	}
@@ -113,7 +114,7 @@ func (s *S3RegistryStore) GetBlobLocation(ctx context.Context, repository string
 	}
 }
 
-func (s *S3RegistryStore) completeMultipartUpload(ctx context.Context, path string) error {
+func (s *S3RegistryStore) completeMultipartUpload(ctx context.Context, path string, desiresieze int64) error {
 	uploadid, err := s.getUploadId(ctx, path, false)
 	if err != nil {
 		if err != ErrUploadNotFound {
@@ -132,6 +133,17 @@ func (s *S3RegistryStore) completeMultipartUpload(ctx context.Context, path stri
 	listpartsOutput, err := s.provider.Client.ListParts(ctx, listparts)
 	if err != nil {
 		return err
+	}
+
+	// make sure all parts are uploaded
+	if desiresieze > 0 {
+		var size int64
+		for _, part := range listpartsOutput.Parts {
+			size += part.Size
+		}
+		if size != desiresieze {
+			return fmt.Errorf("size mismatch: %d != %d, may be some parts are not uploaded", size, desiresieze)
+		}
 	}
 
 	complete := &s3.CompleteMultipartUploadInput{

@@ -69,8 +69,23 @@ func (s *S3RegistryStore) PutManifest(ctx context.Context, repository string, re
 	// complete multipart upload
 	for _, blob := range manifest.Blobs {
 		path := BlobDigestPath(repository, blob.Digest)
-		if err := s.completeMultipartUpload(ctx, path, blob.Size); err != nil {
-			return err
+		if blob.Size > MultiPartUploadThreshold {
+			if err := s.completeMultipartUpload(ctx, path, blob.Size); err != nil {
+				return err
+			}
+		} else {
+			// check if uploadid exists and match size
+			meta, err := s.fs.GetBlobMeta(ctx, repository, blob.Digest)
+			if err != nil {
+				return err
+			}
+			if meta.ContentLength != blob.Size {
+				// remove this blob
+				if err := s.fs.DeleteBlob(ctx, repository, blob.Digest); err != nil {
+					return err
+				}
+				return fmt.Errorf("size mismatch: %d != %d", meta.ContentLength, blob.Size)
+			}
 		}
 	}
 	return s.fs.PutManifest(ctx, repository, reference, contentType, manifest)
@@ -98,6 +113,10 @@ func (s *S3RegistryStore) PutBlob(ctx context.Context, repository string, digest
 
 func (s *S3RegistryStore) ExistsBlob(ctx context.Context, repository string, digest digest.Digest) (bool, error) {
 	return s.fs.ExistsBlob(ctx, repository, digest)
+}
+
+func (s *S3RegistryStore) GetBlobMeta(ctx context.Context, repository string, digest digest.Digest) (BlobMeta, error) {
+	return s.fs.GetBlobMeta(ctx, repository, digest)
 }
 
 func (s *S3RegistryStore) GetBlobLocation(ctx context.Context, repository string, digest digest.Digest,
@@ -215,11 +234,6 @@ type presignedPart struct {
 
 func (s *S3RegistryStore) getUploadId(ctx context.Context, path string, withCreate bool) (*string, error) {
 	key := s.provider.prefixedKey(path)
-	input := &s3.CreateMultipartUploadInput{
-		Bucket:  aws.String(s.provider.Bucket),
-		Key:     key,
-		Expires: aws.Time(time.Now().Add(s.provider.Expire)),
-	}
 	existsupload, err := s.provider.Client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
 		Bucket:    aws.String(s.provider.Bucket),
 		Delimiter: aws.String("/"),
@@ -234,6 +248,11 @@ func (s *S3RegistryStore) getUploadId(ctx context.Context, path string, withCrea
 	} else {
 		if !withCreate {
 			return nil, ErrUploadNotFound
+		}
+		input := &s3.CreateMultipartUploadInput{
+			Bucket:  aws.String(s.provider.Bucket),
+			Key:     key,
+			Expires: aws.Time(time.Now().Add(s.provider.Expire)),
 		}
 		createOutput, err := s.provider.Client.CreateMultipartUpload(ctx, input)
 		if err != nil {

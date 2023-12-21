@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"errors"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -141,10 +142,9 @@ func (m *S3StorageProvider) Get(ctx context.Context, path string) (*BlobContent,
 		return nil, err
 	}
 	return &BlobContent{
-		Content:         getobjout.Body,
-		ContentType:     StringDeref(getobjout.ContentType, ""),
-		ContentLength:   getobjout.ContentLength,
-		ContentEncoding: StringDeref(getobjout.ContentEncoding, ""),
+		Content:       getobjout.Body,
+		ContentType:   StringDeref(getobjout.ContentType, ""),
+		ContentLength: getobjout.ContentLength,
 	}, nil
 }
 
@@ -160,6 +160,25 @@ func (m *S3StorageProvider) Exists(ctx context.Context, path string) (bool, erro
 		return false, err
 	}
 	return true, nil
+}
+
+func (m *S3StorageProvider) Stat(ctx context.Context, path string) (FsObjectMeta, error) {
+	headobjout, err := m.Client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(m.Bucket),
+		Key:    m.prefixedKey(path),
+	})
+	if err != nil {
+		if IsS3StorageNotFound(err) {
+			return FsObjectMeta{}, os.ErrNotExist
+		}
+		return FsObjectMeta{}, err
+	}
+	return FsObjectMeta{
+		Name:         path,
+		Size:         headobjout.ContentLength,
+		LastModified: TimeDeref(headobjout.LastModified, time.Time{}),
+		ContentType:  StringDeref(headobjout.ContentType, ""),
+	}, nil
 }
 
 func (m *S3StorageProvider) List(ctx context.Context, path string, recursive bool) ([]FsObjectMeta, error) {

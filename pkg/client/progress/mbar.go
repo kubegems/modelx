@@ -80,6 +80,8 @@ func (m *MultiBar) run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			// print once
+			m.print()
 			return
 		case <-t.C:
 			if m.haschange {

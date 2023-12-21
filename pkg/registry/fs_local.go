@@ -39,9 +39,8 @@ func NewLocalFSProvider(options *LocalFSOptions) (*LocalFSProvider, error) {
 }
 
 type localFileMeta struct {
-	ContentType     string `json:"contentType,omitempty"`
-	ContentLength   int64  `json:"contentLength,omitempty"`
-	ContentEncoding string `json:"contentEncoding,omitempty"`
+	ContentType   string `json:"contentType,omitempty"`
+	ContentLength int64  `json:"contentLength,omitempty"`
 }
 
 func (f *LocalFSProvider) Put(ctx context.Context, path string, content BlobContent) error {
@@ -61,10 +60,9 @@ func (f *LocalFSProvider) Get(ctx context.Context, path string) (*BlobContent, e
 		return nil, err
 	}
 	return &BlobContent{
-		ContentType:     meta.ContentType,
-		ContentLength:   meta.ContentLength,
-		ContentEncoding: meta.ContentEncoding,
-		Content:         stream,
+		ContentType: meta.ContentType,
+
+		Content: stream,
 	}, nil
 }
 
@@ -84,6 +82,20 @@ func (f *LocalFSProvider) Exists(ctx context.Context, path string) (bool, error)
 		return false, nil
 	}
 	return false, err
+}
+
+func (f *LocalFSProvider) Stat(ctx context.Context, path string) (FsObjectMeta, error) {
+	fi, err := os.Stat(iopath.Join(f.basepath, path))
+	if err != nil {
+		return FsObjectMeta{}, err
+	}
+	meta, _ := f.readmeta(path)
+	return FsObjectMeta{
+		Name:         path,
+		Size:         fi.Size(),
+		LastModified: fi.ModTime(),
+		ContentType:  meta.ContentType,
+	}, nil
 }
 
 func (f *LocalFSProvider) List(ctx context.Context, path string, recursive bool) ([]FsObjectMeta, error) {
@@ -142,9 +154,8 @@ func (f *LocalFSProvider) List(ctx context.Context, path string, recursive bool)
 
 func (f *LocalFSProvider) writemeta(path string, content BlobContent) error {
 	meta := localFileMeta{
-		ContentType:     content.ContentType,
-		ContentLength:   content.ContentLength,
-		ContentEncoding: content.ContentEncoding,
+		ContentType:   content.ContentType,
+		ContentLength: content.ContentLength,
 	}
 	jsonData, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
@@ -174,6 +185,13 @@ func (f *LocalFSProvider) getdata(path string) (io.ReadCloser, error) {
 }
 
 func (f *LocalFSProvider) readmeta(path string) (*localFileMeta, error) {
+	fi, err := os.Stat(iopath.Join(f.basepath, path))
+	if err != nil {
+		return nil, err
+	}
+	if fi.IsDir() {
+		return nil, os.ErrNotExist
+	}
 	metafile := iopath.Join(f.basepath, path+".meta")
 	raw, err := os.ReadFile(metafile)
 	if err != nil {
@@ -183,5 +201,6 @@ func (f *LocalFSProvider) readmeta(path string) (*localFileMeta, error) {
 	if err := json.Unmarshal(raw, &meta); err != nil {
 		return nil, err
 	}
+	meta.ContentLength = fi.Size()
 	return &meta, nil
 }

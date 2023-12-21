@@ -21,10 +21,14 @@ var (
 )
 
 type BlobContent struct {
-	ContentType     string
-	ContentLength   int64
-	ContentEncoding string
-	Content         io.ReadCloser
+	ContentType   string
+	ContentLength int64
+	Content       io.ReadCloser
+}
+
+type BlobMeta struct {
+	ContentType   string
+	ContentLength int64
 }
 
 type RegistryStore interface {
@@ -43,6 +47,7 @@ type RegistryStore interface {
 	DeleteBlob(ctx context.Context, repository string, digest digest.Digest) error
 	PutBlob(ctx context.Context, repository string, digest digest.Digest, content BlobContent) error
 	ExistsBlob(ctx context.Context, repository string, digest digest.Digest) (bool, error)
+	GetBlobMeta(ctx context.Context, repository string, digest digest.Digest) (BlobMeta, error)
 
 	GetBlobLocation(ctx context.Context, repository string, digest digest.Digest,
 		purpose string, properties map[string]string) (*BlobLocation, error)

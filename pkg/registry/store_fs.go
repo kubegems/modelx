@@ -337,6 +337,15 @@ func (m *FSRegistryStore) ExistsBlob(ctx context.Context, repository string, dig
 	}
 }
 
+func (m *FSRegistryStore) GetBlobMeta(ctx context.Context, repository string, digest digest.Digest) (BlobMeta, error) {
+	path := BlobDigestPath(repository, digest)
+	meta, err := m.FS.Stat(ctx, path)
+	if err != nil {
+		return BlobMeta{}, errors.NewInternalError(err)
+	}
+	return BlobMeta{ContentType: meta.ContentType, ContentLength: meta.Size}, nil
+}
+
 func (m *FSRegistryStore) GetBlob(ctx context.Context, repository string, digest digest.Digest) (*BlobContent, error) {
 	path := BlobDigestPath(repository, digest)
 	content, err := m.FS.Get(ctx, path)

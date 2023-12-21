@@ -179,7 +179,6 @@ func (s *Registry) GetBlob(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Length", strconv.Itoa(int(result.ContentLength)))
 		w.Header().Set("Content-Type", result.ContentType)
-		w.Header().Set("Content-Encoding", result.ContentEncoding)
 		w.WriteHeader(http.StatusOK)
 		io.Copy(w, result.Content)
 		return

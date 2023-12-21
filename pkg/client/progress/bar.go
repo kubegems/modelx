@@ -23,7 +23,7 @@ type Bar struct {
 
 	nameindex    int // scroll name index
 	refreshcount int // refresh count for scroll name
-	mu           sync.Mutex
+	mu           sync.RWMutex
 	mp           *MultiBar
 }
 
@@ -52,11 +52,13 @@ func (b *Bar) SetDone() {
 
 func (r *Bar) Notify() {
 	if r.mp != nil {
-		r.mp.print()
+		r.mp.haschange = true
 	}
 }
 
 func (b *Bar) Print(w io.Writer) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
 	processwidth := b.Width
 
 	buff := make([]byte, processwidth)

@@ -18,7 +18,7 @@ require (
 	github.com/mholt/archiver/v4 v4.0.0-alpha.7
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/spf13/cobra v1.7.0
-	golang.org/x/exp v0.0.0-20230419192730-864b3d6c5c2c
+	golang.org/x/exp v0.0.0-20231226003508-02704c960a9b
 	golang.org/x/sync v0.1.0
 	golang.org/x/term v0.7.0
 	gopkg.in/yaml.v3 v3.0.1
